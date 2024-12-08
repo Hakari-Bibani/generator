@@ -1,6 +1,6 @@
 import streamlit as st
 from PIL import Image
-import psd_tools
+from psd_tools import PSDImage  # Changed from psd_tools.PsdImage
 import os
 from datetime import datetime
 import smtplib
@@ -14,18 +14,19 @@ st.set_page_config(page_title="Certificate Generator", layout="wide")
 
 def modify_psd(name, date, template_path="template.psd"):
     """Modify PSD template with participant details"""
-    psd = psd_tools.PsdImage.open(template_path)
-    # Assuming text layers are named 'name' and 'date' in PSD
-    for layer in psd:
-        if layer.name == 'name':
-            layer.text = name
-        elif layer.name == 'date':
-            layer.text = date
+    psd = PSDImage.open(template_path)  # Changed from psd_tools.PsdImage.open
+    # Loop through all layers including nested ones
+    for layer in psd.descendants():
+        if hasattr(layer, 'text'):  # Check if layer has text
+            if layer.name == 'name':
+                layer.text = name
+            elif layer.name == 'date':
+                layer.text = date
     return psd
 
 def convert_to_pdf(psd, output_path):
     """Convert PSD to PDF"""
-    # First convert PSD to PIL Image
+    # Convert PSD to PIL Image
     image = psd.compose()
     # Save as PDF
     image.save(output_path, 'PDF')
@@ -70,6 +71,15 @@ Your Organization Name"""
 def main():
     st.title("Certificate Generator")
 
+    # Add file uploader for PSD template if not exists
+    if not os.path.exists("template.psd"):
+        st.warning("No template.psd found. Please upload your PSD template.")
+        uploaded_file = st.file_uploader("Upload PSD template", type=['psd'])
+        if uploaded_file is not None:
+            with open("template.psd", "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            st.success("Template uploaded successfully!")
+
     # User input form
     with st.form("certificate_form"):
         name = st.text_input("Participant's Name")
@@ -99,6 +109,7 @@ def main():
 
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
+            st.error("Make sure your PSD template has text layers named 'name' and 'date'")
 
 if __name__ == "__main__":
     main()
