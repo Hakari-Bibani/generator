@@ -1,5 +1,5 @@
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from psd_tools import PSDImage
 import os
 from datetime import datetime
@@ -11,35 +11,51 @@ from email.mime.application import MIMEApplication
 # Configure Streamlit page
 st.set_page_config(page_title="Certificate Generator", layout="wide")
 
-def modify_psd(participant_name, date, template_path="template.psd"):
-    """Modify PSD template with participant details"""
+def create_certificate(participant_name, date, template_path="template.psd"):
+    """Create certificate using PIL"""
     try:
+        # Open PSD and convert to PIL Image
         psd = PSDImage.open(template_path)
+        template = psd.compose()
         
-        # Find and modify text layers
-        for layer in psd.descendants():
-            if hasattr(layer, 'text'):
-                # Check for name layer - contains the example name
-                if "Hawkar Ali Abdulhaq" in layer.text:
-                    layer.text = participant_name
-                # Check for date field
-                elif layer.name.lower() == 'date' or 'date' in layer.text.lower():
-                    layer.text = date
+        # Create a drawing object
+        draw = ImageDraw.Draw(template)
         
-        return psd
+        # Load a font similar to your template (you'll need to provide the font file)
+        try:
+            name_font = ImageFont.truetype("arial.ttf", 60)  # Adjust size as needed
+            date_font = ImageFont.truetype("arial.ttf", 30)  # Adjust size as needed
+        except:
+            # Fallback to default font if custom font not available
+            name_font = ImageFont.load_default()
+            date_font = ImageFont.load_default()
+            st.warning("Custom font not found. Using default font.")
+        
+        # Get template size
+        W, H = template.size
+        
+        # Calculate text sizes and positions
+        # Name position (adjust these values based on your template)
+        name_bbox = draw.textbbox((0, 0), participant_name, font=name_font)
+        name_w = name_bbox[2] - name_bbox[0]
+        name_h = name_bbox[3] - name_bbox[1]
+        name_x = (W - name_w) / 2
+        name_y = H * 0.45  # Adjust this value to position the name correctly
+        
+        # Date position (adjust these values based on your template)
+        date_bbox = draw.textbbox((0, 0), date, font=date_font)
+        date_w = date_bbox[2] - date_bbox[0]
+        date_x = W * 0.25  # Adjust this value for date position
+        date_y = H * 0.85  # Adjust this value for date position
+        
+        # Draw text on image
+        draw.text((name_x, name_y), participant_name, fill="goldenrod", font=name_font)
+        draw.text((date_x, date_y), date, fill="black", font=date_font)
+        
+        return template
+        
     except Exception as e:
-        st.error(f"Error modifying PSD: {str(e)}")
-        raise
-
-def convert_to_pdf(psd, output_path):
-    """Convert PSD to PDF"""
-    try:
-        # Convert PSD to PIL Image
-        image = psd.compose()
-        # Save as PDF
-        image.save(output_path, 'PDF', resolution=300.0)
-    except Exception as e:
-        st.error(f"Error converting to PDF: {str(e)}")
+        st.error(f"Error creating certificate: {str(e)}")
         raise
 
 def send_email(recipient_email, recipient_name, pdf_path):
@@ -96,6 +112,13 @@ def main():
             with open("template.psd", "wb") as f:
                 f.write(uploaded_file.getbuffer())
             st.success("Template uploaded successfully!")
+    
+    # Add font file uploader
+    font_file = st.file_uploader("Upload font file (optional)", type=['ttf', 'otf'])
+    if font_file is not None:
+        with open("custom_font.ttf", "wb") as f:
+            f.write(font_file.getbuffer())
+        st.success("Font uploaded successfully!")
 
     # User input form
     with st.form("certificate_form"):
@@ -113,12 +136,12 @@ def main():
                 # Format date as needed for certificate
                 formatted_date = date.strftime("%B %d, %Y")
                 
-                # Modify PSD
-                psd = modify_psd(name, formatted_date)
+                # Create certificate
+                certificate = create_certificate(name, formatted_date)
                 
-                # Generate PDF
+                # Save as PDF
                 pdf_path = f"temp/{name.replace(' ', '_')}_certificate.pdf"
-                convert_to_pdf(psd, pdf_path)
+                certificate.save(pdf_path, "PDF", resolution=300)
 
                 # Send email
                 send_email(email, name, pdf_path)
@@ -126,6 +149,8 @@ def main():
                 st.success("✅ Certificate generated and sent successfully!")
                 
                 # Optional: Show preview
+                st.image(certificate, caption="Certificate Preview", use_column_width=True)
+                
                 with open(pdf_path, "rb") as pdf_file:
                     st.download_button(
                         label="Download Certificate",
