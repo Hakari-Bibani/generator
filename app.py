@@ -7,14 +7,13 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
-import pdf2image
 
 # Configure Streamlit page
 st.set_page_config(page_title="Certificate Generator", layout="wide")
 
-# Constants
-FONT_PATH = "fonts/AlexBrush-Regular.ttf"
-TEMPLATE_PATH = "template.psd"
+# Updated paths to match the new structure
+FONT_PATH = "assets/fonts/AlexBrush-Regular.ttf"
+TEMPLATE_PATH = "template.psd"  # Updated path
 CERTIFICATE_COLOR = (198, 194, 177)  # RGB color for text
 
 def load_font(size=60):
@@ -23,30 +22,33 @@ def load_font(size=60):
         return ImageFont.truetype(FONT_PATH, size)
     except Exception as e:
         st.error(f"Error loading font: {str(e)}")
+        st.error(f"Current working directory: {os.getcwd()}")
+        st.error(f"Font path: {os.path.abspath(FONT_PATH)}")
         return None
 
-def modify_psd(name, date, template_path=TEMPLATE_PATH):
-    """Modify PSD template with participant details"""
+def create_certificate(name, date, template_path=TEMPLATE_PATH):
+    """Create certificate by converting PSD to PIL Image and adding text"""
     try:
+        # Open PSD and convert to PIL Image
         psd = PSDImage.open(template_path)
         image = psd.compose()
         
-        # Convert to PIL Image for custom font rendering
+        # Convert to RGB mode if not already
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Create a drawing object
         draw = ImageDraw.Draw(image)
         
         # Load fonts
-        name_font = load_font(size=60)  # Larger size for name
-        date_font = load_font(size=40)  # Smaller size for date
+        name_font = load_font(size=60)  # Adjust size as needed
+        date_font = load_font(size=40)  # Adjust size as needed
         
         if name_font and date_font:
             # Get image dimensions
             width, height = image.size
             
-            # Calculate text positions (adjust these values based on your template)
-            name_position = (width * 0.5, height * 0.5)  # Center of image
-            date_position = (width * 0.5, height * 0.7)  # Below name
-            
-            # Get text sizes for centering
+            # Calculate text sizes for centering
             name_bbox = draw.textbbox((0, 0), name, font=name_font)
             name_width = name_bbox[2] - name_bbox[0]
             name_height = name_bbox[3] - name_bbox[1]
@@ -55,24 +57,32 @@ def modify_psd(name, date, template_path=TEMPLATE_PATH):
             date_width = date_bbox[2] - date_bbox[0]
             date_height = date_bbox[3] - date_bbox[1]
             
-            # Draw text centered
-            draw.text((name_position[0] - name_width/2, name_position[1] - name_height/2), 
-                     name, font=name_font, fill=CERTIFICATE_COLOR)
-            draw.text((date_position[0] - date_width/2, date_position[1] - date_height/2), 
-                     date, font=date_font, fill=CERTIFICATE_COLOR)
+            # Calculate positions
+            name_x = width * 0.5 - name_width / 2
+            name_y = height * 0.5 - name_height / 2
             
-        return image
+            date_x = width * 0.5 - date_width / 2
+            date_y = height * 0.7 - date_height / 2
+            
+            # Add text to image
+            draw.text((name_x, name_y), name, font=name_font, fill=CERTIFICATE_COLOR)
+            draw.text((date_x, date_y), date, font=date_font, fill=CERTIFICATE_COLOR)
+            
+            return image
+        return None
     except Exception as e:
-        st.error(f"Error modifying PSD: {str(e)}")
+        st.error(f"Error creating certificate: {str(e)}")
+        st.error(f"Current working directory: {os.getcwd()}")
+        st.error(f"Template path: {os.path.abspath(template_path)}")
         return None
 
-def convert_to_pdf(image, output_path):
-    """Convert PIL Image to PDF"""
+def save_pdf(image, output_path):
+    """Save PIL Image as PDF"""
     try:
         image.save(output_path, 'PDF', resolution=300.0)
         return True
     except Exception as e:
-        st.error(f"Error converting to PDF: {str(e)}")
+        st.error(f"Error saving PDF: {str(e)}")
         return False
 
 def send_email(recipient_email, recipient_name, pdf_path):
@@ -119,11 +129,21 @@ Your Organization Name"""
 
 def check_assets():
     """Check if required assets exist"""
+    missing_assets = []
+    
+    # Add debugging information
+    st.write("Current working directory:", os.getcwd())
+    st.write("Looking for font at:", os.path.abspath(FONT_PATH))
+    st.write("Looking for template at:", os.path.abspath(TEMPLATE_PATH))
+    
     if not os.path.exists(FONT_PATH):
-        st.error(f"Font file not found at {FONT_PATH}")
-        return False
+        missing_assets.append(f"Font file not found at {FONT_PATH}")
     if not os.path.exists(TEMPLATE_PATH):
-        st.error(f"Template file not found at {TEMPLATE_PATH}")
+        missing_assets.append(f"Template file not found at {TEMPLATE_PATH}")
+    
+    if missing_assets:
+        for error in missing_assets:
+            st.error(error)
         return False
     return True
 
@@ -132,19 +152,29 @@ def main():
 
     # Check assets
     if not check_assets():
+        st.write("Please ensure all required files are in place before continuing.")
         st.stop()
 
-    # Preview current template
+    # Show template preview
     if os.path.exists(TEMPLATE_PATH):
         psd = PSDImage.open(TEMPLATE_PATH)
         preview = psd.compose()
-        st.image(preview, caption="Current Template Preview", use_column_width=True)
+        st.image(preview, caption="Certificate Template", use_column_width=True)
 
     # User input form
     with st.form("certificate_form"):
         name = st.text_input("Participant's Name")
         date = st.date_input("Date")
         email = st.text_input("Email Address")
+        
+        # Add position adjustment sliders
+        st.write("Adjust text positions (optional):")
+        col1, col2 = st.columns(2)
+        with col1:
+            name_y_pos = st.slider("Name Y Position", 0.3, 0.7, 0.5, 0.01)
+        with col2:
+            date_y_pos = st.slider("Date Y Position", 0.5, 0.9, 0.7, 0.01)
+        
         submit = st.form_submit_button("Generate Certificate")
 
     if submit and name and email:
@@ -152,16 +182,16 @@ def main():
             # Create temp directory if it doesn't exist
             os.makedirs('temp', exist_ok=True)
 
-            # Modify PSD and convert to image
-            modified_image = modify_psd(name, date.strftime("%B %d, %Y"))
+            # Generate certificate
+            certificate_image = create_certificate(name, date.strftime("%B %d, %Y"))
             
-            if modified_image:
-                # Generate PDF
+            if certificate_image:
+                # Show preview
+                st.image(certificate_image, caption="Generated Certificate Preview", use_column_width=True)
+                
+                # Save as PDF
                 pdf_path = f"temp/{name.replace(' ', '_')}_certificate.pdf"
-                if convert_to_pdf(modified_image, pdf_path):
-                    # Preview generated certificate
-                    st.image(modified_image, caption="Generated Certificate Preview", use_column_width=True)
-                    
+                if save_pdf(certificate_image, pdf_path):
                     # Send email
                     if send_email(email, name, pdf_path):
                         st.success("Certificate generated and sent successfully!")
