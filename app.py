@@ -1,157 +1,74 @@
-import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
-from psd_tools import PSDImage
-import os
-from datetime import datetime
+import streamlit as st 
+from PIL import Image
+import img2pdf
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 
-# Configure Streamlit page
-st.set_page_config(page_title="Certificate Generator")
+def modify_certificate(name, date):
+  # Open the PSD template
+  psd = Image.open("template.psd")
+  
+  # Modify the name and date layers
+  # (implementation depends on PSD layer names/structure)
+  # ...
 
-def find_text_layer_positions(psd):
-    """Find the position of text layers in the PSD"""
-    name_info = None
-    date_info = None
-    
-    for layer in psd.descendants():
-        if hasattr(layer, 'text'):
-            # Find the name layer (Hawkar Ali Abdulhaq)
-            if "Hawkar Ali Abdulhaq" in layer.text:
-                name_info = {
-                    'bbox': layer.bbox,
-                    'text': layer.text
-                }
-            # Find the date layer
-            elif "DATE" in layer.text.upper():
-                date_info = {
-                    'bbox': layer.bbox,
-                    'text': layer.text
-                }
-    
-    return name_info, date_info
+  # Save modified PSD as PDF
+  pdf_bytes = img2pdf.convert(psd)
+  return pdf_bytes
 
-def modify_psd(name, date, template_path="template.psd"):
-    """Modify PSD template with participant details"""
-    try:
-        # Open PSD file
-        psd = PSDImage.open(template_path)
-        
-        # Convert to PIL Image
-        image = psd.compose()
-        draw = ImageDraw.Draw(image)
-        
-        # Get layer positions
-        name_info, date_info = find_text_layer_positions(psd)
-        
-        if name_info:
-            # Set up font (using default for now, you can specify your font path)
-            try:
-                # Try to load Arial font
-                font = ImageFont.truetype("arial.ttf", 60)
-            except:
-                try:
-                    # Try to load DejaVu font (common on Linux)
-                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf", 60)
-                except:
-                    # Fallback to default font
-                    font = ImageFont.load_default()
-                    st.warning("Using default font - for better results, please install Arial font")
-            
-            # Calculate center position
-            bbox = name_info['bbox']
-            x = (bbox[2] + bbox[0]) // 2
-            y = (bbox[3] + bbox[1]) // 2
-            
-            # Calculate text size for centering
-            text_bbox = draw.textbbox((0, 0), name, font=font)
-            text_width = text_bbox[2] - text_bbox[0]
-            text_height = text_bbox[3] - text_bbox[1]
-            
-            # Gold color similar to original
-            gold_color = (218, 165, 32)
-            
-            # Draw name
-            draw.text(
-                (x - text_width//2, y - text_height//2),
-                name,
-                font=font,
-                fill=gold_color
-            )
-        
-        if date_info:
-            try:
-                font = ImageFont.truetype("arial.ttf", 40)
-            except:
-                font = ImageFont.load_default()
-            
-            bbox = date_info['bbox']
-            x = (bbox[2] + bbox[0]) // 2
-            y = (bbox[3] + bbox[1]) // 2
-            
-            text_bbox = draw.textbbox((0, 0), date, font=font)
-            text_width = text_bbox[2] - text_bbox[0]
-            text_height = text_bbox[3] - text_bbox[1]
-            
-            draw.text(
-                (x - text_width//2, y - text_height//2),
-                date,
-                font=font,
-                fill='black'
-            )
-        
-        return image
-    
-    except Exception as e:
-        st.error(f"Error modifying PSD: {str(e)}")
-        raise
+def send_email(email, name, pdf_file):
+  # Email configuration 
+  smtp_server = 'smtp.gmail.com'
+  smtp_port = 587
+  sender_email = st.secrets["email"]
+  password = st.secrets["password"]
 
-def main():
-    st.title("Certificate Generator")
-    
-    # File uploader for PSD template
-    uploaded_psd = st.file_uploader("Upload PSD template", type=['psd'])
-    if uploaded_psd:
-        with open("template.psd", "wb") as f:
-            f.write(uploaded_psd.getbuffer())
-        st.success("PSD template uploaded!")
-    
-    # Certificate generation form
-    with st.form("certificate_form"):
-        name = st.text_input("Participant's Name")
-        date = st.date_input("Certificate Date")
-        email = st.text_input("Email Address")
-        submit = st.form_submit_button("Generate Certificate")
-    
-    if submit and name and email:
-        try:
-            # Generate certificate
-            certificate = modify_psd(
-                name, 
-                date.strftime("%B %d, %Y")
-            )
-            
-            # Save as PDF
-            pdf_path = f"{name.replace(' ', '_')}_certificate.pdf"
-            certificate.save(pdf_path, "PDF", resolution=300)
-            
-            # Show preview
-            st.image(certificate, caption="Generated Certificate Preview")
-            
-            # Show download button
-            with open(pdf_path, "rb") as file:
-                st.download_button(
-                    label="Download Certificate",
-                    data=file,
-                    file_name=pdf_path,
-                    mime="application/pdf"
-                )
-            
-            st.success("Certificate generated successfully!")
-            
-            # Clean up
-            os.remove(pdf_path)
-            
-        except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
+  # Create email message
+  message = MIMEMultipart()
+  message['From'] = sender_email
+  message['To'] = email
+  message['Subject'] = "Course Certificate"
+  
+  body = f"""Dear {name},
 
-if __name__ == "__main__":
-    main()
+  Thank you for participating in our course. We are delighted to have you with us. 
+  Please find your certificate attached.
+
+  Best regards,
+  Hawkar Ali Abdulhaq"""
+
+  message.attach(MIMEText(body, 'plain'))
+
+  # Attach PDF 
+  attachment = MIMEBase('application', 'pdf')
+  attachment.set_payload(pdf_file) 
+  encoders.encode_base64(attachment)
+  attachment.add_header('Content-Disposition', "attachment; filename= certificate.pdf")
+  message.attach(attachment)
+
+  # Send email
+  server = smtplib.SMTP(smtp_server, smtp_port)
+  server.starttls()
+  server.login(sender_email, password)
+  server.send_message(message)
+  server.quit()
+
+# Streamlit app
+st.title("Certificate Generator")
+
+with st.form("input_form"):
+  name = st.text_input("Participant Name")
+  email = st.text_input("Email Address") 
+  date = st.date_input("Certificate Date")
+
+  submitted = st.form_submit_button("Generate Certificate")
+  if submitted:
+    pdf_bytes = modify_certificate(name, date)
+    send_email(email, name, pdf_bytes)
+    st.success("Certificate generated and emailed!")
+
+if st.secrets["password"] == "":
+  st.warning("Email password not set. Add it in .streamlit/secrets.toml")
