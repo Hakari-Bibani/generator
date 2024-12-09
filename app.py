@@ -1,74 +1,115 @@
-import streamlit as st 
+import streamlit as st
 from PIL import Image
-import img2pdf
+from psd_tools import PSDImage  # Changed from psd_tools.PsdImage
+import os
+from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email import encoders
+from email.mime.application import MIMEApplication
+import pdf2image
 
-def modify_certificate(name, date):
-  # Open the PSD template
-  psd = Image.open("template.psd")
-  
-  # Modify the name and date layers
-  # (implementation depends on PSD layer names/structure)
-  # ...
+# Configure Streamlit page
+st.set_page_config(page_title="Certificate Generator", layout="wide")
 
-  # Save modified PSD as PDF
-  pdf_bytes = img2pdf.convert(psd)
-  return pdf_bytes
+def modify_psd(name, date, template_path="template.psd"):
+    """Modify PSD template with participant details"""
+    psd = PSDImage.open(template_path)  # Changed from psd_tools.PsdImage.open
+    # Loop through all layers including nested ones
+    for layer in psd.descendants():
+        if hasattr(layer, 'text'):  # Check if layer has text
+            if layer.name == 'name':
+                layer.text = name
+            elif layer.name == 'date':
+                layer.text = date
+    return psd
 
-def send_email(email, name, pdf_file):
-  # Email configuration 
-  smtp_server = 'smtp.gmail.com'
-  smtp_port = 587
-  sender_email = st.secrets["email"]
-  password = st.secrets["password"]
+def convert_to_pdf(psd, output_path):
+    """Convert PSD to PDF"""
+    # Convert PSD to PIL Image
+    image = psd.compose()
+    # Save as PDF
+    image.save(output_path, 'PDF')
 
-  # Create email message
-  message = MIMEMultipart()
-  message['From'] = sender_email
-  message['To'] = email
-  message['Subject'] = "Course Certificate"
-  
-  body = f"""Dear {name},
+def send_email(recipient_email, recipient_name, pdf_path):
+    """Send email with PDF certificate"""
+    # Get email credentials from Streamlit secrets
+    sender_email = st.secrets["email"]["sender"]
+    sender_password = st.secrets["email"]["password"]
+    smtp_server = st.secrets["email"]["smtp_server"]
+    smtp_port = st.secrets["email"]["smtp_port"]
 
-  Thank you for participating in our course. We are delighted to have you with us. 
-  Please find your certificate attached.
+    # Create message
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = recipient_email
+    msg['Subject'] = "Your Course Certificate"
 
-  Best regards,
-  Hawkar Ali Abdulhaq"""
+    # Email body
+    body = f"""Dear {recipient_name},
 
-  message.attach(MIMEText(body, 'plain'))
+Thank you for participating in our course. We are delighted to have you with us. 
+Please find your certificate attached.
 
-  # Attach PDF 
-  attachment = MIMEBase('application', 'pdf')
-  attachment.set_payload(pdf_file) 
-  encoders.encode_base64(attachment)
-  attachment.add_header('Content-Disposition', "attachment; filename= certificate.pdf")
-  message.attach(attachment)
+Best regards,
+Your Organization Name"""
+    
+    msg.attach(MIMEText(body, 'plain'))
 
-  # Send email
-  server = smtplib.SMTP(smtp_server, smtp_port)
-  server.starttls()
-  server.login(sender_email, password)
-  server.send_message(message)
-  server.quit()
+    # Attach PDF
+    with open(pdf_path, 'rb') as f:
+        pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
+        pdf_attachment.add_header('Content-Disposition', 'attachment', filename='certificate.pdf')
+        msg.attach(pdf_attachment)
 
-# Streamlit app
-st.title("Certificate Generator")
+    # Send email
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
 
-with st.form("input_form"):
-  name = st.text_input("Participant Name")
-  email = st.text_input("Email Address") 
-  date = st.date_input("Certificate Date")
+def main():
+    st.title("Certificate Generator")
 
-  submitted = st.form_submit_button("Generate Certificate")
-  if submitted:
-    pdf_bytes = modify_certificate(name, date)
-    send_email(email, name, pdf_bytes)
-    st.success("Certificate generated and emailed!")
+    # Add file uploader for PSD template if not exists
+    if not os.path.exists("template.psd"):
+        st.warning("No template.psd found. Please upload your PSD template.")
+        uploaded_file = st.file_uploader("Upload PSD template", type=['psd'])
+        if uploaded_file is not None:
+            with open("template.psd", "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            st.success("Template uploaded successfully!")
 
-if st.secrets["password"] == "":
-  st.warning("Email password not set. Add it in .streamlit/secrets.toml")
+    # User input form
+    with st.form("certificate_form"):
+        name = st.text_input("Participant's Name")
+        date = st.date_input("Date")
+        email = st.text_input("Email Address")
+        submit = st.form_submit_button("Generate Certificate")
+
+    if submit and name and email:
+        try:
+            # Create temp directory if it doesn't exist
+            os.makedirs('temp', exist_ok=True)
+
+            # Modify PSD
+            psd = modify_psd(name, date.strftime("%B %d, %Y"))
+            
+            # Generate PDF
+            pdf_path = f"temp/{name.replace(' ', '_')}_certificate.pdf"
+            convert_to_pdf(psd, pdf_path)
+
+            # Send email
+            send_email(email, name, pdf_path)
+
+            st.success("Certificate generated and sent successfully!")
+
+            # Clean up
+            os.remove(pdf_path)
+
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
+            st.error("Make sure your PSD template has text layers named 'name' and 'date'")
+
+if __name__ == "__main__":
+    main()
