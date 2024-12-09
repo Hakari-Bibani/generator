@@ -11,9 +11,9 @@ from email.mime.application import MIMEApplication
 # Configure Streamlit page
 st.set_page_config(page_title="Certificate Generator", layout="wide")
 
-# Updated paths to match the new structure
-FONT_PATH = "assets/fonts/AlexBrush-Regular.ttf"
-TEMPLATE_PATH = "template.psd"  # Updated path
+# Constants - Updated paths to match your structure
+FONT_PATH = "fonts/AlexBrush-Regular.ttf"
+TEMPLATE_PATH = "template.psd"
 CERTIFICATE_COLOR = (198, 194, 177)  # RGB color for text
 
 def load_font(size=60):
@@ -22,8 +22,6 @@ def load_font(size=60):
         return ImageFont.truetype(FONT_PATH, size)
     except Exception as e:
         st.error(f"Error loading font: {str(e)}")
-        st.error(f"Current working directory: {os.getcwd()}")
-        st.error(f"Font path: {os.path.abspath(FONT_PATH)}")
         return None
 
 def create_certificate(name, date, template_path=TEMPLATE_PATH):
@@ -40,7 +38,7 @@ def create_certificate(name, date, template_path=TEMPLATE_PATH):
         # Create a drawing object
         draw = ImageDraw.Draw(image)
         
-        # Load fonts
+        # Load fonts with adjusted sizes
         name_font = load_font(size=60)  # Adjust size as needed
         date_font = load_font(size=40)  # Adjust size as needed
         
@@ -72,8 +70,6 @@ def create_certificate(name, date, template_path=TEMPLATE_PATH):
         return None
     except Exception as e:
         st.error(f"Error creating certificate: {str(e)}")
-        st.error(f"Current working directory: {os.getcwd()}")
-        st.error(f"Template path: {os.path.abspath(template_path)}")
         return None
 
 def save_pdf(image, output_path):
@@ -130,12 +126,6 @@ Your Organization Name"""
 def check_assets():
     """Check if required assets exist"""
     missing_assets = []
-    
-    # Add debugging information
-    st.write("Current working directory:", os.getcwd())
-    st.write("Looking for font at:", os.path.abspath(FONT_PATH))
-    st.write("Looking for template at:", os.path.abspath(TEMPLATE_PATH))
-    
     if not os.path.exists(FONT_PATH):
         missing_assets.append(f"Font file not found at {FONT_PATH}")
     if not os.path.exists(TEMPLATE_PATH):
@@ -152,7 +142,16 @@ def main():
 
     # Check assets
     if not check_assets():
-        st.write("Please ensure all required files are in place before continuing.")
+        st.write("Please make sure your files are in the correct locations:")
+        st.code("""
+certificate-generator/
+├── fonts/
+│   └── AlexBrush-Regular.ttf
+├── template.psd
+├── app.py
+└── .streamlit/
+    └── secrets.toml
+        """)
         st.stop()
 
     # Show template preview
@@ -201,6 +200,7 @@ def main():
 
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
+            st.error("Please check that your template.psd is properly formatted and try again.")
 
 if __name__ == "__main__":
     main()
