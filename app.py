@@ -1,5 +1,5 @@
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageFont, ImageDraw
 from psd_tools import PSDImage
 import os
 from datetime import datetime
@@ -7,38 +7,69 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
+import pdf2image
 
 # Configure Streamlit page
 st.set_page_config(page_title="Certificate Generator", layout="wide")
 
-def modify_psd(name, date, template_path="template.psd"):
+# Constants
+FONT_PATH = "fonts/AlexBrush-Regular.ttf"
+TEMPLATE_PATH = "template.psd"
+CERTIFICATE_COLOR = (198, 194, 177)  # RGB color for text
+
+def load_font(size=60):
+    """Load the custom font with specified size"""
+    try:
+        return ImageFont.truetype(FONT_PATH, size)
+    except Exception as e:
+        st.error(f"Error loading font: {str(e)}")
+        return None
+
+def modify_psd(name, date, template_path=TEMPLATE_PATH):
     """Modify PSD template with participant details"""
     try:
         psd = PSDImage.open(template_path)
+        image = psd.compose()
         
-        # Find and modify the name and date layers
-        for layer in psd.descendants():
-            if hasattr(layer, 'text'):
-                # Check for name layer - it might be identified by its content or name
-                if "Hawkar Ali Abdulhaq" in layer.text or layer.name.lower() == "name":
-                    layer.text = name
-                    
-                # Check for date layer
-                elif layer.name.lower() == "date" or "DATE" in layer.text:
-                    layer.text = date
+        # Convert to PIL Image for custom font rendering
+        draw = ImageDraw.Draw(image)
         
-        return psd
+        # Load fonts
+        name_font = load_font(size=60)  # Larger size for name
+        date_font = load_font(size=40)  # Smaller size for date
+        
+        if name_font and date_font:
+            # Get image dimensions
+            width, height = image.size
+            
+            # Calculate text positions (adjust these values based on your template)
+            name_position = (width * 0.5, height * 0.5)  # Center of image
+            date_position = (width * 0.5, height * 0.7)  # Below name
+            
+            # Get text sizes for centering
+            name_bbox = draw.textbbox((0, 0), name, font=name_font)
+            name_width = name_bbox[2] - name_bbox[0]
+            name_height = name_bbox[3] - name_bbox[1]
+            
+            date_bbox = draw.textbbox((0, 0), date, font=date_font)
+            date_width = date_bbox[2] - date_bbox[0]
+            date_height = date_bbox[3] - date_bbox[1]
+            
+            # Draw text centered
+            draw.text((name_position[0] - name_width/2, name_position[1] - name_height/2), 
+                     name, font=name_font, fill=CERTIFICATE_COLOR)
+            draw.text((date_position[0] - date_width/2, date_position[1] - date_height/2), 
+                     date, font=date_font, fill=CERTIFICATE_COLOR)
+            
+        return image
     except Exception as e:
         st.error(f"Error modifying PSD: {str(e)}")
-        raise e
+        return None
 
-def convert_to_pdf(psd, output_path):
-    """Convert PSD to PDF"""
+def convert_to_pdf(image, output_path):
+    """Convert PIL Image to PDF"""
     try:
-        # Convert PSD to PIL Image
-        image = psd.compose()
-        # Save as PDF with high quality
-        image.save(output_path, 'PDF', resolution=300.0, quality=100)
+        image.save(output_path, 'PDF', resolution=300.0)
         return True
     except Exception as e:
         st.error(f"Error converting to PDF: {str(e)}")
@@ -57,24 +88,23 @@ def send_email(recipient_email, recipient_name, pdf_path):
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = recipient_email
-        msg['Subject'] = "Your Python Training Certificate"
+        msg['Subject'] = "Your Course Certificate"
 
         # Email body
         body = f"""Dear {recipient_name},
 
-Thank you for participating in our Comprehensive Python Training course. 
-We are pleased to present you with your certificate of completion.
+Thank you for participating in our course. We are delighted to have you with us. 
+Please find your certificate attached.
 
 Best regards,
-Code for Impact Team"""
+Your Organization Name"""
         
         msg.attach(MIMEText(body, 'plain'))
 
         # Attach PDF
         with open(pdf_path, 'rb') as f:
             pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
-            pdf_attachment.add_header('Content-Disposition', 'attachment', 
-                                    filename=f'{recipient_name}_Certificate.pdf')
+            pdf_attachment.add_header('Content-Disposition', 'attachment', filename='certificate.pdf')
             msg.attach(pdf_attachment)
 
         # Send email
@@ -82,57 +112,61 @@ Code for Impact Team"""
             server.starttls()
             server.login(sender_email, sender_password)
             server.send_message(msg)
-            
-        return True
+            return True
     except Exception as e:
         st.error(f"Error sending email: {str(e)}")
         return False
 
-def main():
-    st.title("Python Training Certificate Generator")
-    st.write("Generate and send certificates for course participants")
+def check_assets():
+    """Check if required assets exist"""
+    if not os.path.exists(FONT_PATH):
+        st.error(f"Font file not found at {FONT_PATH}")
+        return False
+    if not os.path.exists(TEMPLATE_PATH):
+        st.error(f"Template file not found at {TEMPLATE_PATH}")
+        return False
+    return True
 
-    # Add file uploader for PSD template if not exists
-    if not os.path.exists("template.psd"):
-        st.warning("No template.psd found. Please upload your PSD template.")
-        uploaded_file = st.file_uploader("Upload PSD template", type=['psd'])
-        if uploaded_file is not None:
-            with open("template.psd", "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            st.success("Template uploaded successfully!")
+def main():
+    st.title("Certificate Generator")
+
+    # Check assets
+    if not check_assets():
+        st.stop()
+
+    # Preview current template
+    if os.path.exists(TEMPLATE_PATH):
+        psd = PSDImage.open(TEMPLATE_PATH)
+        preview = psd.compose()
+        st.image(preview, caption="Current Template Preview", use_column_width=True)
 
     # User input form
     with st.form("certificate_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            name = st.text_input("Participant's Name")
-        with col2:
-            email = st.text_input("Email Address")
-        
-        date = st.date_input("Certificate Date")
-        submit = st.form_submit_button("Generate & Send Certificate")
+        name = st.text_input("Participant's Name")
+        date = st.date_input("Date")
+        email = st.text_input("Email Address")
+        submit = st.form_submit_button("Generate Certificate")
 
     if submit and name and email:
         try:
             # Create temp directory if it doesn't exist
             os.makedirs('temp', exist_ok=True)
 
-            # Show processing message
-            with st.spinner('Generating certificate...'):
-                # Modify PSD
-                psd = modify_psd(name, date.strftime("%d/%m/%Y"))
-                
+            # Modify PSD and convert to image
+            modified_image = modify_psd(name, date.strftime("%B %d, %Y"))
+            
+            if modified_image:
                 # Generate PDF
                 pdf_path = f"temp/{name.replace(' ', '_')}_certificate.pdf"
-                if convert_to_pdf(psd, pdf_path):
+                if convert_to_pdf(modified_image, pdf_path):
+                    # Preview generated certificate
+                    st.image(modified_image, caption="Generated Certificate Preview", use_column_width=True)
+                    
                     # Send email
                     if send_email(email, name, pdf_path):
-                        st.success("✅ Certificate generated and sent successfully!")
-                    else:
-                        st.error("Failed to send email. Please check your email settings.")
-
-                # Clean up
-                if os.path.exists(pdf_path):
+                        st.success("Certificate generated and sent successfully!")
+                    
+                    # Clean up
                     os.remove(pdf_path)
 
         except Exception as e:
