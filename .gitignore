@@ -3,18 +3,15 @@ __pycache__/
 *.py[cod]
 *$py.class
 .env
-
-# Templates and generated files
-*.psd
-*.pdf
-temp/
-
-# Streamlit secrets
-.streamlit/secrets.toml
-
-# Virtual Environment
 venv/
 ENV/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Project specific
+temp/
+*.pdf
 
 # OS specific
 .DS_Store
