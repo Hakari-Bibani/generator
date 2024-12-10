@@ -44,7 +44,7 @@ def modify_psd(template_path, name, date):
     
     try:
         # Load the custom fonts
-        name_font = ImageFont.truetype("fonts/Pristina Regular.ttf", size=74)
+        name_font = ImageFont.truetype("fonts/Pristina Regular.ttf", size=76)
         date_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=18)
     except OSError:
         st.error("""Font files not found. Please ensure you have:
@@ -64,7 +64,7 @@ def modify_psd(template_path, name, date):
     
     # Add date with Arial Bold font - Moved left
     date_color = (79, 79, 76)  # RGB for #4f4f4c
-    date_x = 676
+    date_x = 670
     date_y = 1036 
     draw.text((date_x, 1036), date, font=date_font, fill=date_color)
     
