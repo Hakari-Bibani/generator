@@ -13,8 +13,54 @@ from dotenv import load_dotenv
 # Load environment variables from .env if available
 load_dotenv()
 
-# Function to get email configuration
+def modify_psd(template_path, name, date):
+    """Modify PSD template with name and date"""
+    # Open the PSD file
+    psd = PSDImage.open(template_path)
+    
+    # Convert to PIL Image
+    image = psd.compose()
+    
+    # Create drawing object
+    draw = ImageDraw.Draw(image)
+    
+    # Load the custom font
+    name_font = ImageFont.truetype("fonts/AlexBrush-Regular.ttf", size=61)
+    date_font = ImageFont.truetype("fonts/AlexBrush-Regular.ttf", size=11)
+    
+    # Add name with specified parameters
+    name_color = (190, 140, 75)  # RGB for #be8c4d
+    draw.text((959, 655), name, font=name_font, fill=name_color)
+    
+    # Add date with specified parameters
+    date_color = (79, 79, 76)  # RGB for #4f4f4c
+    draw.text((739, 1048), date, font=date_font, fill=date_color)
+    
+    # Save modified image
+    temp_path = tempfile.mktemp(suffix='.png')
+    image.save(temp_path)
+    
+    return temp_path
+
+def convert_to_pdf(image_path):
+    """Convert image to PDF"""
+    # Open the image
+    image = Image.open(image_path)
+    
+    # Convert to RGB if necessary
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Create temporary PDF file
+    pdf_path = tempfile.mktemp(suffix='.pdf')
+    
+    # Save as PDF
+    image.save(pdf_path, 'PDF', resolution=100.0)
+    
+    return pdf_path
+
 def get_email_config():
+    """Get email configuration from either Streamlit secrets or environment variables"""
     # Try to get from Streamlit secrets first (TOML format)
     if hasattr(st, 'secrets') and 'smtp' in st.secrets:
         return {
@@ -33,6 +79,7 @@ def get_email_config():
         }
 
 def send_certificate(recipient_email, subject, body, pdf_path):
+    """Send certificate via email"""
     # Get email configuration
     config = get_email_config()
     
@@ -75,6 +122,7 @@ def send_certificate(recipient_email, subject, body, pdf_path):
         raise Exception(f"An unexpected error occurred: {str(e)}")
 
 def main():
+    """Main Streamlit application"""
     st.title("Certificate Generator & Sender")
     
     # Show configuration status
@@ -102,6 +150,10 @@ def main():
                     
                     # Generate certificate
                     psd_path = "templates/certificate.psd"
+                    if not os.path.exists(psd_path):
+                        st.error(f"Template file not found: {psd_path}")
+                        return
+                        
                     modified_psd = modify_psd(psd_path, full_name, formatted_date)
                     
                     # Convert to PDF
