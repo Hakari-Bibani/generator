@@ -1,15 +1,92 @@
 import streamlit as st
 import os
-import sys
 from datetime import datetime
+from psd_tools import PSDImage
+from PIL import Image, ImageFont, ImageDraw
+import tempfile
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
+from dotenv import load_dotenv
 
-# Add the current directory to Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Load environment variables
+load_dotenv()
 
-from utils.psd_handler import modify_psd
-from utils.pdf_converter import convert_to_pdf
-from utils.email_sender import send_certificate
+# Utility functions
+def modify_psd(template_path, name, date):
+    # Open the PSD file
+    psd = PSDImage.open(template_path)
+    
+    # Convert to PIL Image
+    image = psd.compose()
+    
+    # Create drawing object
+    draw = ImageDraw.Draw(image)
+    
+    # Load the custom font
+    name_font = ImageFont.truetype("fonts/AlexBrush-Regular.ttf", size=61)
+    date_font = ImageFont.truetype("fonts/AlexBrush-Regular.ttf", size=11)
+    
+    # Add name
+    name_color = (190, 140, 75)  # RGB for #be8c4d
+    draw.text((959, 655), name, font=name_font, fill=name_color)
+    
+    # Add date
+    date_color = (79, 79, 76)  # RGB for #4f4f4c
+    draw.text((739, 1048), date, font=date_font, fill=date_color)
+    
+    # Save modified image
+    temp_path = tempfile.mktemp(suffix='.png')
+    image.save(temp_path)
+    
+    return temp_path
 
+def convert_to_pdf(image_path):
+    # Open the image
+    image = Image.open(image_path)
+    
+    # Convert to RGB if necessary
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Create temporary PDF file
+    pdf_path = tempfile.mktemp(suffix='.pdf')
+    
+    # Save as PDF
+    image.save(pdf_path, 'PDF', resolution=100.0)
+    
+    return pdf_path
+
+def send_certificate(recipient_email, subject, body, pdf_path):
+    # Email configuration
+    smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
+    smtp_port = int(os.getenv('SMTP_PORT', '587'))
+    sender_email = os.getenv('SENDER_EMAIL')
+    sender_password = os.getenv('SENDER_PASSWORD')
+    
+    # Create message
+    message = MIMEMultipart()
+    message['From'] = sender_email
+    message['To'] = recipient_email
+    message['Subject'] = subject
+    
+    # Add body
+    message.attach(MIMEText(body, 'plain'))
+    
+    # Attach PDF
+    with open(pdf_path, 'rb') as f:
+        pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
+        pdf_attachment.add_header('Content-Disposition', 'attachment', filename='certificate.pdf')
+        message.attach(pdf_attachment)
+    
+    # Send email
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(message)
+
+# Main Streamlit app
 def main():
     st.title("Certificate Generator & Sender")
     
@@ -28,7 +105,7 @@ def main():
                     formatted_date = date.strftime("%B %d, %Y")
                     
                     # Generate certificate
-                    psd_path = os.path.join("templates", "certificate.psd")
+                    psd_path = "templates/certificate.psd"
                     modified_psd = modify_psd(psd_path, full_name, formatted_date)
                     
                     # Convert to PDF
