@@ -179,10 +179,9 @@ def main():
                     email_subject = "Your Course Certificate"
                     email_body = f"""Dear {first_name},
 
-Thank you for participating in our course. We are delighted to have you with us. Please find your certificate attached.
+Please accept our sincere congratulations on successfully completing the Comprehensive Python Training course. Your dedication and hard work have been commendable. We are delighted to present you with your certificate, attached herewith.
 
-Best regards,
-Your Organization Name"""
+We wish you all the best in your future endeavors.
                     
                     send_certificate(email, email_subject, email_body, pdf_path)
                     
