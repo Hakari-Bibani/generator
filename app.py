@@ -184,7 +184,7 @@ Your dedication and hard work have been commendable. We are delighted to present
 
 We wish you all the best in your future endeavors."""
                     
-     send_certificate(email, email_subject, email_body, pdf_path)
+         send_certificate(email, email_subject, email_body, pdf_path)
                     
                     # Clean up temporary files
                     os.remove(modified_psd)
