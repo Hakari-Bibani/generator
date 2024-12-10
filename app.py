@@ -59,7 +59,7 @@ def modify_psd(template_path, name, date):
     name_bbox = draw.textbbox((0, 0), name, font=name_font)
     name_width = name_bbox[2] - name_bbox[0]
     name_x = 959 - (name_width / 2)  # Center horizontally around x: 958.79
-    name_y = 690
+    name_y = 620
     draw.text((name_x, name_y), name, font=name_font, fill=name_color)
     
     # Add date with Arial Bold font - Moved left
