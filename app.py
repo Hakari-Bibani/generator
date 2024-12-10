@@ -37,7 +37,7 @@ def modify_psd(template_path, name, date):
     
     # Convert to PIL Image with specific dimensions
     image = psd.compose()
-    image = image.resize((1714, 1205))  # Set to exact template size
+    image = image.resize((1714, 1205), Image.Resampling.LANCZOS)  # Using LANCZOS for better quality resize
     
     # Create drawing object
     draw = ImageDraw.Draw(image)
@@ -53,21 +53,23 @@ def modify_psd(template_path, name, date):
         in your fonts directory.""")
         raise
     
-    # Add name with Pristina Regular font
+    # Add name with Pristina Regular font - Moved higher
     name_color = (190, 140, 75)  # RGB for #be8c4d
     # Calculate text size for centering
     name_bbox = draw.textbbox((0, 0), name, font=name_font)
     name_width = name_bbox[2] - name_bbox[0]
     name_x = 959 - (name_width / 2)  # Center horizontally around x: 958.79
-    draw.text((name_x, 655), name, font=name_font, fill=name_color)
+    name_y = 635  # Moved up by 20 pixels
+    draw.text((name_x, name_y), name, font=name_font, fill=name_color)
     
-    # Add date with Arial Bold font
+    # Add date with Arial Bold font - Moved left
     date_color = (79, 79, 76)  # RGB for #4f4f4c
-    draw.text((739, 1048), date, font=date_font, fill=date_color)
+    date_x = 719  # Moved left by 20 pixels
+    draw.text((date_x, 1048), date, font=date_font, fill=date_color)
     
-    # Save modified image
+    # Save modified image in high quality
     temp_path = tempfile.mktemp(suffix='.png')
-    image.save(temp_path, quality=95)  # High quality save
+    image.save(temp_path, quality=100, dpi=(300, 300))  # Maximum quality PNG
     
     return temp_path
 
@@ -82,8 +84,14 @@ def convert_to_pdf(image_path):
     # Create temporary PDF file
     pdf_path = tempfile.mktemp(suffix='.pdf')
     
-    # Save as PDF with high quality
-    image.save(pdf_path, 'PDF', resolution=300.0)
+    # Save as PDF with maximum quality
+    image.save(
+        pdf_path, 
+        'PDF', 
+        resolution=300.0,
+        quality=100,
+        optimize=False  # Disable optimization to maintain quality
+    )
     
     return pdf_path
 
@@ -161,6 +169,9 @@ def main():
                     
                     # Convert to PDF
                     pdf_path = convert_to_pdf(modified_psd)
+                    
+                    # Preview before sending
+                    st.image(modified_psd, caption="Certificate Preview", use_column_width=True)
                     
                     # Send email
                     first_name = full_name.split()[0]
