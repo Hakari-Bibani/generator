@@ -10,24 +10,38 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from dotenv import load_dotenv
 
-# Load environment variables
+# Load environment variables from .env if available
 load_dotenv()
 
-# [Previous functions remain the same: modify_psd and convert_to_pdf]
+# Function to get email configuration
+def get_email_config():
+    # Try to get from Streamlit secrets first (TOML format)
+    if hasattr(st, 'secrets') and 'smtp' in st.secrets:
+        return {
+            'server': st.secrets.smtp.server,
+            'port': st.secrets.smtp.port,
+            'email': st.secrets.smtp.email,
+            'password': st.secrets.smtp.password
+        }
+    # Fall back to environment variables
+    else:
+        return {
+            'server': os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
+            'port': int(os.getenv('SMTP_PORT', '587')),
+            'email': os.getenv('SENDER_EMAIL'),
+            'password': os.getenv('SENDER_PASSWORD')
+        }
 
 def send_certificate(recipient_email, subject, body, pdf_path):
-    # Email configuration
-    smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-    smtp_port = int(os.getenv('SMTP_PORT', '587'))
-    sender_email = os.getenv('SENDER_EMAIL')
-    sender_password = os.getenv('SENDER_PASSWORD')
+    # Get email configuration
+    config = get_email_config()
     
-    if not all([smtp_server, smtp_port, sender_email, sender_password]):
-        raise ValueError("Missing email configuration. Please check your environment variables.")
+    if not all(config.values()):
+        raise ValueError("Missing email configuration. Please check your secrets or environment variables.")
     
     # Create message
     message = MIMEMultipart()
-    message['From'] = sender_email
+    message['From'] = config['email']
     message['To'] = recipient_email
     message['Subject'] = subject
     
@@ -41,57 +55,36 @@ def send_certificate(recipient_email, subject, body, pdf_path):
         message.attach(pdf_attachment)
     
     try:
-        # Send email with detailed error handling
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            # Show connection steps for debugging
-            st.write("Connecting to SMTP server...")
-            server.set_debuglevel(1)  # Enable debug output
-            
-            # Start TLS
-            st.write("Starting TLS encryption...")
+        # Send email
+        with smtplib.SMTP(config['server'], config['port']) as server:
             server.starttls()
-            
-            # Login
-            st.write("Attempting login...")
-            server.login(sender_email, sender_password)
-            
-            # Send message
-            st.write("Sending email...")
+            server.login(config['email'], config['password'])
             server.send_message(message)
-            
-            st.write("Email sent successfully!")
+            st.success("Email sent successfully!")
             
     except smtplib.SMTPAuthenticationError:
         raise Exception(
             "Email authentication failed. Please ensure:\n"
             "1. You're using an App Password (not your regular password)\n"
             "2. 2-Step Verification is enabled on your Google Account\n"
-            "3. The App Password is correctly copied to your environment variables"
+            "3. The App Password is correctly copied to your secrets"
         )
     except smtplib.SMTPException as e:
         raise Exception(f"SMTP error occurred: {str(e)}")
     except Exception as e:
         raise Exception(f"An unexpected error occurred: {str(e)}")
 
-# Main Streamlit app
 def main():
     st.title("Certificate Generator & Sender")
     
-    # Add configuration status
+    # Show configuration status
+    config = get_email_config()
     st.sidebar.title("Configuration Status")
-    email_config = {
-        "SMTP Server": os.getenv('SMTP_SERVER'),
-        "SMTP Port": os.getenv('SMTP_PORT'),
-        "Sender Email": os.getenv('SENDER_EMAIL'),
-        "Password Set": "Yes" if os.getenv('SENDER_PASSWORD') else "No"
-    }
-    
     st.sidebar.write("Email Configuration:")
-    for key, value in email_config.items():
-        if key != "Password Set":
-            st.sidebar.text(f"{key}: {value}")
-        else:
-            st.sidebar.text(f"{key}: {'✓' if value == 'Yes' else '✗'}")
+    st.sidebar.text(f"SMTP Server: {config['server']}")
+    st.sidebar.text(f"SMTP Port: {config['port']}")
+    st.sidebar.text(f"Sender Email: {config['email']}")
+    st.sidebar.text(f"Password Set: {'✓' if config['password'] else '✗'}")
     
     # User input form
     with st.form("certificate_form"):
@@ -104,13 +97,34 @@ def main():
         if submit_button:
             if full_name and email and date:
                 try:
-                    # [Rest of the code remains the same]
-                    ...
+                    # Convert date to required format
+                    formatted_date = date.strftime("%B %d, %Y")
+                    
+                    # Generate certificate
+                    psd_path = "templates/certificate.psd"
+                    modified_psd = modify_psd(psd_path, full_name, formatted_date)
+                    
+                    # Convert to PDF
+                    pdf_path = convert_to_pdf(modified_psd)
+                    
+                    # Send email
+                    first_name = full_name.split()[0]
+                    email_subject = "Your Course Certificate"
+                    email_body = f"""Dear {first_name},
+
+Thank you for participating in our course. We are delighted to have you with us. Please find your certificate attached.
+
+Best regards,
+Your Organization Name"""
+                    
+                    send_certificate(email, email_subject, email_body, pdf_path)
+                    
+                    # Clean up temporary files
+                    os.remove(modified_psd)
+                    os.remove(pdf_path)
                     
                 except Exception as e:
                     st.error(str(e))
-                    if "authentication failed" in str(e).lower():
-                        st.error("Please check the sidebar for configuration status.")
             else:
                 st.warning("Please fill in all fields.")
 
