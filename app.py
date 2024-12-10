@@ -44,8 +44,8 @@ def modify_psd(template_path, name, date):
     
     try:
         # Load the custom fonts
-        name_font = ImageFont.truetype("fonts/Pristina Regular.ttf", size=60.99)
-        date_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=13)
+        name_font = ImageFont.truetype("fonts/Pristina Regular.ttf", size=72)
+        date_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=18)
     except OSError:
         st.error("""Font files not found. Please ensure you have:
         1. fonts/Pristina Regular.ttf
