@@ -59,14 +59,14 @@ def modify_psd(template_path, name, date):
     name_bbox = draw.textbbox((0, 0), name, font=name_font)
     name_width = name_bbox[2] - name_bbox[0]
     name_x = 959 - (name_width / 2)  # Center horizontally around x: 958.79
-    name_y = 620
+    name_y = 618
     draw.text((name_x, name_y), name, font=name_font, fill=name_color)
     
     # Add date with Arial Bold font - Moved left
     date_color = (79, 79, 76)  # RGB for #4f4f4c
     date_x = 742 
-    date_y = 1048 
-    draw.text((date_x, 1048), date, font=date_font, fill=date_color)
+    date_y = 1032 
+    draw.text((date_x, 1032), date, font=date_font, fill=date_color)
     
     # Save modified image in high quality
     temp_path = tempfile.mktemp(suffix='.png')
