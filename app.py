@@ -64,9 +64,9 @@ def modify_psd(template_path, name, date):
     
     # Add date with Arial Bold font - Moved left
     date_color = (79, 79, 76)  # RGB for #4f4f4c
-    date_x = 707 
-    date_y = 1034 
-    draw.text((date_x, 1034), date, font=date_font, fill=date_color)
+    date_x = 690
+    date_y = 1036 
+    draw.text((date_x, 1036), date, font=date_font, fill=date_color)
     
     # Save modified image in high quality
     temp_path = tempfile.mktemp(suffix='.png')
