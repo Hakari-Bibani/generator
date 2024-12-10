@@ -17,98 +17,124 @@ load_dotenv()
 TEMPLATE_WIDTH = 1714
 TEMPLATE_HEIGHT = 1205
 
-def check_file_exists(file_path, file_type="file"):
-    """Check if file exists and is readable"""
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"{file_type} not found: {file_path}")
-    if not os.access(file_path, os.R_OK):
-        raise PermissionError(f"Cannot read {file_type}: {file_path}")
-    return file_path
-
-def debug_file_info(file_path):
-    """Print debug information about a file"""
-    try:
-        size = os.path.getsize(file_path)
-        st.write(f"File path: {file_path}")
-        st.write(f"File size: {size} bytes")
-        st.write(f"File exists: {os.path.exists(file_path)}")
-        st.write(f"File is readable: {os.access(file_path, os.R_OK)}")
-        return True
-    except Exception as e:
-        st.error(f"Error checking file: {str(e)}")
-        return False
+def check_font_file(font_path):
+    """Check if font file exists"""
+    if not os.path.exists(font_path):
+        raise FileNotFoundError(f"Font file not found: {font_path}")
+    return font_path
 
 def modify_psd(template_path, name, date):
     """Modify PSD template with name and date"""
+    # Open the PSD file
+    psd = PSDImage.open(template_path)
+    
+    # Convert to PIL Image and ensure correct dimensions
+    image = psd.compose()
+    image = image.resize((TEMPLATE_WIDTH, TEMPLATE_HEIGHT), Image.Resampling.LANCZOS)
+    
+    # Create drawing object
+    draw = ImageDraw.Draw(image)
+    
     try:
-        # Debug information
-        st.write("Checking template file...")
-        if not debug_file_info(template_path):
-            return None
+        # Load the custom fonts
+        name_font = ImageFont.truetype(check_font_file("fonts/Pristina-Regular.ttf"), size=61)
+        date_font = ImageFont.truetype(check_font_file("fonts/Arial-Bold.ttf"), size=11)
+    except FileNotFoundError:
+        st.error("Required fonts not found. Please make sure both Pristina Regular and Arial Bold fonts are in the fonts folder.")
+        raise
+    
+    # Add name with specified parameters
+    name_color = (190, 140, 75)  # RGB for #be8c4d
+    # Calculate text size for centering if needed
+    name_bbox = draw.textbbox((0, 0), name, font=name_font)
+    name_width = name_bbox[2] - name_bbox[0]
+    # Use the original x, y coordinates
+    draw.text((959, 655), name, font=name_font, fill=name_color)
+    
+    # Add date with specified parameters
+    date_color = (79, 79, 76)  # RGB for #4f4f4c
+    draw.text((739, 1048), date, font=date_font, fill=date_color)
+    
+    # Save modified image
+    temp_path = tempfile.mktemp(suffix='.png')
+    image.save(temp_path)
+    
+    return temp_path
+
+def get_email_config():
+    """Get email configuration from either Streamlit secrets or environment variables"""
+    # Try to get from Streamlit secrets first (TOML format)
+    if hasattr(st, 'secrets') and 'smtp' in st.secrets:
+        return {
+            'server': st.secrets.smtp.server,
+            'port': st.secrets.smtp.port,
+            'email': st.secrets.smtp.email,
+            'password': st.secrets.smtp.password
+        }
+    # Fall back to environment variables
+    else:
+        return {
+            'server': os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
+            'port': int(os.getenv('SMTP_PORT', '587')),
+            'email': os.getenv('SENDER_EMAIL'),
+            'password': os.getenv('SENDER_PASSWORD')
+        }
+
+def send_certificate(recipient_email, subject, body, pdf_path):
+    """Send certificate via email"""
+    # Get email configuration
+    config = get_email_config()
+    
+    if not all(config.values()):
+        raise ValueError("Missing email configuration. Please check your secrets or environment variables.")
+    
+    # Create message
+    message = MIMEMultipart()
+    message['From'] = config['email']
+    message['To'] = recipient_email
+    message['Subject'] = subject
+    
+    # Add body
+    message.attach(MIMEText(body, 'plain'))
+    
+    # Attach PDF
+    with open(pdf_path, 'rb') as f:
+        pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
+        pdf_attachment.add_header('Content-Disposition', 'attachment', filename='certificate.pdf')
+        message.attach(pdf_attachment)
+    
+    try:
+        # Send email
+        with smtplib.SMTP(config['server'], config['port']) as server:
+            server.starttls()
+            server.login(config['email'], config['password'])
+            server.send_message(message)
+            st.success("Email sent successfully!")
             
-        # Try to open the PSD file
-        st.write("Opening PSD file...")
-        psd = PSDImage.open(template_path)
-        
-        # Convert to PIL Image and ensure correct dimensions
-        st.write("Converting to PIL Image...")
-        image = psd.compose()
-        image = image.resize((TEMPLATE_WIDTH, TEMPLATE_HEIGHT), Image.Resampling.LANCZOS)
-        
-        # Create drawing object
-        draw = ImageDraw.Draw(image)
-        
-        # Try to use default fonts if custom fonts are not available
-        try:
-            st.write("Loading fonts...")
-            try:
-                name_font = ImageFont.truetype("fonts/Pristina-Regular.ttf", size=61)
-            except:
-                st.warning("Pristina font not found, using default font...")
-                name_font = ImageFont.load_default()
-                
-            try:
-                date_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=11)
-            except:
-                st.warning("Arial Bold font not found, using default font...")
-                date_font = ImageFont.load_default()
-        
-        except Exception as e:
-            st.error(f"Font error: {str(e)}")
-            st.warning("Using default font...")
-            name_font = ImageFont.load_default()
-            date_font = ImageFont.load_default()
-        
-        # Add name with specified parameters
-        name_color = (190, 140, 75)  # RGB for #be8c4d
-        draw.text((959, 655), name, font=name_font, fill=name_color)
-        
-        # Add date with specified parameters
-        date_color = (79, 79, 76)  # RGB for #4f4f4c
-        draw.text((739, 1048), date, font=date_font, fill=date_color)
-        
-        # Save modified image
-        st.write("Saving modified image...")
-        temp_path = tempfile.mktemp(suffix='.png')
-        image.save(temp_path)
-        
-        return temp_path
-        
+    except smtplib.SMTPAuthenticationError:
+        raise Exception(
+            "Email authentication failed. Please ensure:\n"
+            "1. You're using an App Password (not your regular password)\n"
+            "2. 2-Step Verification is enabled on your Google Account\n"
+            "3. The App Password is correctly copied to your secrets"
+        )
+    except smtplib.SMTPException as e:
+        raise Exception(f"SMTP error occurred: {str(e)}")
     except Exception as e:
-        st.error(f"Error in modify_psd: {str(e)}")
-        st.write("Full error details:")
-        st.write(e)
-        return None
+        raise Exception(f"An unexpected error occurred: {str(e)}")
 
 def main():
     """Main Streamlit application"""
     st.title("Certificate Generator & Sender")
     
-    # Show current working directory and files
-    st.write("Current working directory:", os.getcwd())
-    st.write("Files in current directory:", os.listdir())
-    if os.path.exists("templates"):
-        st.write("Files in templates directory:", os.listdir("templates"))
+    # Show configuration status
+    config = get_email_config()
+    st.sidebar.title("Configuration Status")
+    st.sidebar.write("Email Configuration:")
+    st.sidebar.text(f"SMTP Server: {config['server']}")
+    st.sidebar.text(f"SMTP Port: {config['port']}")
+    st.sidebar.text(f"Sender Email: {config['email']}")
+    st.sidebar.text(f"Password Set: {'✓' if config['password'] else '✗'}")
     
     # User input form
     with st.form("certificate_form"):
@@ -125,18 +151,34 @@ def main():
                     formatted_date = date.strftime("%B %d, %Y")
                     
                     # Generate certificate
-                    psd_path = os.path.join("templates", "certificate.psd")
-                    st.write(f"Looking for template at: {psd_path}")
-                    
-                    modified_psd = modify_psd(psd_path, full_name, formatted_date)
-                    if modified_psd is None:
-                        st.error("Failed to modify certificate template")
+                    psd_path = "templates/certificate.psd"
+                    if not os.path.exists(psd_path):
+                        st.error(f"Template file not found: {psd_path}")
                         return
                         
-                    # Rest of your code...
+                    modified_psd = modify_psd(psd_path, full_name, formatted_date)
+                    
+                    # Convert to PDF
+                    pdf_path = convert_to_pdf(modified_psd)
+                    
+                    # Send email
+                    first_name = full_name.split()[0]
+                    email_subject = "Your Course Certificate"
+                    email_body = f"""Dear {first_name},
+
+Thank you for participating in our course. We are delighted to have you with us. Please find your certificate attached.
+
+Best regards,
+Your Organization Name"""
+                    
+                    send_certificate(email, email_subject, email_body, pdf_path)
+                    
+                    # Clean up temporary files
+                    os.remove(modified_psd)
+                    os.remove(pdf_path)
                     
                 except Exception as e:
-                    st.error(f"An error occurred: {str(e)}")
+                    st.error(str(e))
             else:
                 st.warning("Please fill in all fields.")
 
