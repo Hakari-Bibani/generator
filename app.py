@@ -44,8 +44,8 @@ def modify_psd(template_path, name, date):
     
     try:
         # Load the custom fonts
-        name_font = ImageFont.truetype("fonts/Pristina Regular.ttf", size=61)
-        date_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=11)
+        name_font = ImageFont.truetype("fonts/Pristina Regular.ttf", size=60.99)
+        date_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=13)
     except OSError:
         st.error("""Font files not found. Please ensure you have:
         1. fonts/Pristina Regular.ttf
@@ -54,7 +54,7 @@ def modify_psd(template_path, name, date):
         raise
     
     # Add name with Pristina Regular font - Moved higher
-    name_color = (190, 140, 75)  # RGB for #be8c4d
+    name_color = (190, 140, 45)  # RGB for #be8c4d
     # Calculate text size for centering
     name_bbox = draw.textbbox((0, 0), name, font=name_font)
     name_width = name_bbox[2] - name_bbox[0]
@@ -64,7 +64,7 @@ def modify_psd(template_path, name, date):
     
     # Add date with Arial Bold font - Moved left
     date_color = (79, 79, 76)  # RGB for #4f4f4c
-    date_x = 719  # Moved left by 20 pixels
+    date_x = 719  # Moved left by 30 pixels
     draw.text((date_x, 1048), date, font=date_font, fill=date_color)
     
     # Save modified image in high quality
