@@ -9,54 +9,10 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from dotenv import load_dotenv
-import hashlib
-
-# Load environment variables from .env if available
-load_dotenv()
-import streamlit as st
-import os
-from datetime import datetime
-from psd_tools import PSDImage
-from PIL import Image, ImageFont, ImageDraw
-import tempfile
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
-from dotenv import load_dotenv
-import hashlib
 
 # Load environment variables from .env if available
 load_dotenv()
 
-# Initialize session state for authentication
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-
-def check_password():
-    """Returns `True` if the user had the correct password."""
-
-    def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        if hashlib.sha256(str(st.session_state["password"]).encode()).hexdigest() == st.secrets.get("password_hash", "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"):  # Default hash for 'password'
-            st.session_state.authenticated = True
-            del st.session_state["password"]  # Don't store password
-        else:
-            st.session_state.authenticated = False
-            st.error("😕 Password incorrect")
-
-    if not st.session_state.authenticated:
-        st.markdown("## Welcome to Certificate Generator")
-        st.write("Please enter the password to access the application.")
-        st.text_input(
-            "Password", 
-            type="password", 
-            key="password",
-            on_change=password_entered
-        )
-        return False
-    
-    return True
 def get_email_config():
     # Try to get from Streamlit secrets first (TOML format)
     if hasattr(st, 'secrets') and 'smtp' in st.secrets:
@@ -183,9 +139,6 @@ def send_certificate(recipient_email, subject, body, pdf_path):
         raise Exception(f"An unexpected error occurred: {str(e)}")
 
 def main():
-    if not check_password():
-        return
-
     st.title("Certificate Generator & Sender")
     
     # Show configuration status
@@ -196,11 +149,6 @@ def main():
     st.sidebar.text(f"SMTP Port: {config['port']}")
     st.sidebar.text(f"Sender Email: {config['email']}")
     st.sidebar.text(f"Password Set: {'✓' if config['password'] else '✗'}")
-    
-    # Add logout button in sidebar
-    if st.sidebar.button("Logout"):
-        st.session_state.authenticated = False
-        st.experimental_rerun()
     
     # User input form
     with st.form("certificate_form"):
@@ -225,7 +173,7 @@ def main():
                     
                     # Preview before sending
                     st.image(modified_psd, caption="Certificate Preview", use_column_width=True)
-                     
+                    
                     # Send email
                     first_name = full_name.split()[0]
                     email_subject = "Your Course Certificate"
@@ -236,7 +184,7 @@ Your dedication and hard work have been commendable. We are delighted to present
 
 We wish you all the best in your future endeavors."""
                     
-                    send_certificate(email, email_subject, email_body, pdf_path)
+     send_certificate(email, email_subject, email_body, pdf_path)
                     
                     # Clean up temporary files
                     os.remove(modified_psd)
