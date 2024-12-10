@@ -13,23 +13,42 @@ from dotenv import load_dotenv
 # Load environment variables from .env if available
 load_dotenv()
 
+# Template constants
+TEMPLATE_WIDTH = 1714
+TEMPLATE_HEIGHT = 1205
+
+def check_font_file(font_path):
+    """Check if font file exists"""
+    if not os.path.exists(font_path):
+        raise FileNotFoundError(f"Font file not found: {font_path}")
+    return font_path
+
 def modify_psd(template_path, name, date):
     """Modify PSD template with name and date"""
     # Open the PSD file
     psd = PSDImage.open(template_path)
     
-    # Convert to PIL Image
+    # Convert to PIL Image and ensure correct dimensions
     image = psd.compose()
+    image = image.resize((TEMPLATE_WIDTH, TEMPLATE_HEIGHT), Image.Resampling.LANCZOS)
     
     # Create drawing object
     draw = ImageDraw.Draw(image)
     
-    # Load the custom font
-    name_font = ImageFont.truetype("fonts/AlexBrush-Regular.ttf", size=61)
-    date_font = ImageFont.truetype("fonts/AlexBrush-Regular.ttf", size=11)
+    try:
+        # Load the custom fonts
+        name_font = ImageFont.truetype(check_font_file("fonts/Pristina-Regular.ttf"), size=61)
+        date_font = ImageFont.truetype(check_font_file("fonts/Arial-Bold.ttf"), size=11)
+    except FileNotFoundError:
+        st.error("Required fonts not found. Please make sure both Pristina Regular and Arial Bold fonts are in the fonts folder.")
+        raise
     
     # Add name with specified parameters
     name_color = (190, 140, 75)  # RGB for #be8c4d
+    # Calculate text size for centering if needed
+    name_bbox = draw.textbbox((0, 0), name, font=name_font)
+    name_width = name_bbox[2] - name_bbox[0]
+    # Use the original x, y coordinates
     draw.text((959, 655), name, font=name_font, fill=name_color)
     
     # Add date with specified parameters
