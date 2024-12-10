@@ -180,9 +180,9 @@ def main():
                     email_body = f"""Dear {first_name},
 
 Please accept our sincere congratulations on successfully completing the Comprehensive Python Training course. 
-Your dedication and hard work have been commendable. We are delighted to present you with your certificate, attached herewith....
+Your dedication and hard work have been commendable. We are delighted to present you with your certificate, attached herewith.
 
-We wish you all the best in your future endeavors.
+We wish you all the best in your future endeavors."""
                     
                     send_certificate(email, email_subject, email_body, pdf_path)
                     
