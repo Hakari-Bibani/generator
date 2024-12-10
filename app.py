@@ -93,8 +93,7 @@ def convert_to_pdf(image_path):
         quality=100,
         optimize=False  # Disable optimization to maintain quality
     )
-    
- return pdf_path
+    return pdf_path
 
 def send_certificate(recipient_email, subject, body, pdf_path):
     # Get email configuration
@@ -185,101 +184,6 @@ Best regards,
 Your Organization Name"""
                     
                     send_certificate(email, email_subject, email_body, pdf_path)
-                    
-                    # Clean up temporary files
-                    os.remove(modified_psd)
-                    os.remove(pdf_path)
-                    
-                except Exception as e:
-                    st.error(str(e))
-            else:
-                st.warning("Please fill in all fields.")
-
-if __name__ == "__main__":
-    main()
-    
-    # Create message
-    message = MIMEMultipart()
-    message['From'] = config['email']
-    message['To'] = recipient_email
-    message['Subject'] = subject
-    
-    # Add body
-    message.attach(MIMEText(body, 'plain'))
-    
-    # Attach PDF
-    with open(pdf_path, 'rb') as f:
-        pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
-        pdf_attachment.add_header('Content-Disposition', 'attachment', filename='certificate.pdf')
-        message.attach(pdf_attachment)
-    
-    try:
-        # Send email
-        with smtplib.SMTP(config['server'], config['port']) as server:
-            server.starttls()
-            server.login(config['email'], config['password'])
-            server.send_message(message)
-            st.success("Email sent successfully!")
-            
-    except smtplib.SMTPAuthenticationError:
-        raise Exception(
-            "Email authentication failed. Please ensure:\n"
-            "1. You're using an App Password (not your regular password)\n"
-            "2. 2-Step Verification is enabled on your Google Account\n"
-            "3. The App Password is correctly copied to your secrets"
-        )
-    except smtplib.SMTPException as e:
-        raise Exception(f"SMTP error occurred: {str(e)}")
-    except Exception as e:
-        raise Exception(f"An unexpected error occurred: {str(e)}")
-
-def main():
-    st.title("Certificate Generator & Sender")
-    
-    # Show configuration status
-    config = get_email_config()
-    st.sidebar.title("Configuration Status")
-    st.sidebar.write("Email Configuration:")
-    st.sidebar.text(f"SMTP Server: {config['server']}")
-    st.sidebar.text(f"SMTP Port: {config['port']}")
-    st.sidebar.text(f"Sender Email: {config['email']}")
-    st.sidebar.text(f"Password Set: {'✓' if config['password'] else '✗'}")
-    
-    # User input form
-    with st.form("certificate_form"):
-        full_name = st.text_input("Full Name")
-        email = st.text_input("Email Address")
-        date = st.date_input("Date")
-        
-        submit_button = st.form_submit_button("Generate & Send Certificate")
-        
-        if submit_button:
-            if full_name and email and date:
-                try:
-                    # Convert date to required format
-                    formatted_date = date.strftime("%B %d, %Y")
-                    
-                    # Generate certificate
-                    psd_path = "templates/certificate.psd"
-                    modified_psd = modify_psd(psd_path, full_name, formatted_date)
-                    
-                    # Convert to PDF
-                    pdf_path = convert_to_pdf(modified_psd)
-                    
-                    # Preview before sending
-                    st.image(modified_psd, caption="Certificate Preview", use_column_width=True)
-                    
-                    # Send email
-                    first_name = full_name.split()[0]
-                    email_subject = "Your Course Certificate"
-                    email_body = f"""Dear {first_name},
-
-Please accept our sincere congratulations on successfully completing the Comprehensive Python Training course. 
-Your dedication and hard work have been commendable. We are delighted to present you with your certificate, attached herewith.
-
-We wish you all the best in your future endeavors."""
-                    
-         send_certificate(email, email_subject, email_body, pdf_path)
                     
                     # Clean up temporary files
                     os.remove(modified_psd)
