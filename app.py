@@ -1,6 +1,11 @@
 import streamlit as st
 import os
+import sys
 from datetime import datetime
+
+# Add the current directory to Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from utils.psd_handler import modify_psd
 from utils.pdf_converter import convert_to_pdf
 from utils.email_sender import send_certificate
@@ -23,7 +28,7 @@ def main():
                     formatted_date = date.strftime("%B %d, %Y")
                     
                     # Generate certificate
-                    psd_path = "templates/certificate.psd"
+                    psd_path = os.path.join("templates", "certificate.psd")
                     modified_psd = modify_psd(psd_path, full_name, formatted_date)
                     
                     # Convert to PDF
