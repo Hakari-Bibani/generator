@@ -19,21 +19,21 @@ if 'authenticated' not in st.session_state:
 
 def check_password():
     """Returns `True` if the user had the correct password."""
-    
+
     def password_entered():
         """Checks whether a password entered by the user is correct."""
-        if st.session_state["password"] == st.secrets.get("APP_PASSWORD", "admin123"):
+        if st.session_state["password"] == st.secrets.get("password", "default_password"):
             st.session_state.authenticated = True
-            del st.session_state["password"]
+            del st.session_state["password"]  # Don't store password
         else:
             st.session_state.authenticated = False
-            st.error("😕 Password incorrect")
 
     if not st.session_state.authenticated:
+        # First run, show input for password.
         st.text_input(
-            "Please enter the password to access the application",
-            type="password",
-            on_change=password_entered,
+            "Please enter the password", 
+            type="password", 
+            on_change=password_entered, 
             key="password"
         )
         return False
@@ -164,11 +164,12 @@ def send_certificate(recipient_email, subject, body, pdf_path):
         raise Exception(f"An unexpected error occurred: {str(e)}")
 
 def main():
+    if not check_password():
+        st.stop()  # Do not continue if not authenticated
+    
+    # Your existing main application code starts here
     st.title("Certificate Generator & Sender")
     
-    if not check_password():
-        st.stop()  # Do not continue if password is incorrect
-        
     # Show configuration status
     config = get_email_config()
     st.sidebar.title("Configuration Status")
