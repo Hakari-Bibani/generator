@@ -13,6 +13,32 @@ from dotenv import load_dotenv
 # Load environment variables from .env if available
 load_dotenv()
 
+# Initialize session state for authentication
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+
+def check_password():
+    """Returns `True` if the user had the correct password."""
+    
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["password"] == st.secrets.get("APP_PASSWORD", "admin123"):
+            st.session_state.authenticated = True
+            del st.session_state["password"]
+        else:
+            st.session_state.authenticated = False
+            st.error("😕 Password incorrect")
+
+    if not st.session_state.authenticated:
+        st.text_input(
+            "Please enter the password to access the application",
+            type="password",
+            on_change=password_entered,
+            key="password"
+        )
+        return False
+    return True
+
 def get_email_config():
     # Try to get from Streamlit secrets first (TOML format)
     if hasattr(st, 'secrets') and 'smtp' in st.secrets:
@@ -140,6 +166,9 @@ def send_certificate(recipient_email, subject, body, pdf_path):
 def main():
     st.title("Certificate Generator & Sender")
     
+    if not check_password():
+        st.stop()  # Do not continue if password is incorrect
+        
     # Show configuration status
     config = get_email_config()
     st.sidebar.title("Configuration Status")
@@ -148,6 +177,11 @@ def main():
     st.sidebar.text(f"SMTP Port: {config['port']}")
     st.sidebar.text(f"Sender Email: {config['email']}")
     st.sidebar.text(f"Password Set: {'✓' if config['password'] else '✗'}")
+    
+    # Add logout button in sidebar
+    if st.sidebar.button("Logout"):
+        st.session_state.authenticated = False
+        st.experimental_rerun()
     
     # User input form
     with st.form("certificate_form"):
@@ -178,7 +212,7 @@ def main():
                     email_subject = "Your Course Certificate"
                     email_body = f"""Dear {first_name},
 
-Please accept our sincere congratulations on successfully completing the Comprehensive Python Training course. 
+Please accept our sincere congratulations on successfully completing the Comprehensive Python Training course. 
 Your dedication and hard work have been commendable. We are delighted to present you with your certificate, attached herewith.
 We wish you all the best in your future endeavors."""
                     
