@@ -135,7 +135,70 @@ def modify_psd(template_path, name, date, serial_number):
     
     return temp_path
 
-# Rest of the functions remain the same (convert_to_pdf, send_certificate)
+def convert_to_pdf(image_path):
+    """Convert the certificate image to PDF format"""
+    # Open the image
+    image = Image.open(image_path)
+    
+    # Convert to RGB if necessary
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Create temporary PDF file
+    pdf_path = tempfile.mktemp(suffix='.pdf')
+    
+    # Save as PDF with maximum quality
+    image.save(
+        pdf_path, 
+        'PDF', 
+        resolution=300.0,
+        quality=100,
+        optimize=False  # Disable optimization to maintain quality
+    )
+    return pdf_path
+
+def send_certificate(recipient_email, subject, body, pdf_path):
+    """Send certificate via email"""
+    # Get email configuration
+    config = get_email_config()
+    
+    if not all(config.values()):
+        raise ValueError("Missing email configuration. Please check your secrets or environment variables.")
+    
+    # Create message
+    message = MIMEMultipart()
+    message['From'] = config['email']
+    message['To'] = recipient_email
+    message['Subject'] = subject
+    
+    # Add body
+    message.attach(MIMEText(body, 'plain'))
+    
+    # Attach PDF
+    with open(pdf_path, 'rb') as f:
+        pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
+        pdf_attachment.add_header('Content-Disposition', 'attachment', filename='certificate.pdf')
+        message.attach(pdf_attachment)
+    
+    try:
+        # Send email
+        with smtplib.SMTP(config['server'], config['port']) as server:
+            server.starttls()
+            server.login(config['email'], config['password'])
+            server.send_message(message)
+            st.success("Email sent successfully!")
+            
+    except smtplib.SMTPAuthenticationError:
+        raise Exception(
+            "Email authentication failed. Please ensure:\n"
+            "1. You're using an App Password (not your regular password)\n"
+            "2. 2-Step Verification is enabled on your Google Account\n"
+            "3. The App Password is correctly copied to your secrets"
+        )
+    except smtplib.SMTPException as e:
+        raise Exception(f"SMTP error occurred: {str(e)}")
+    except Exception as e:
+        raise Exception(f"An unexpected error occurred: {str(e)}")
 
 def main():
     if not check_password():
