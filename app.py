@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import csv
 from datetime import datetime
 from psd_tools import PSDImage
 from PIL import Image, ImageFont, ImageDraw
@@ -9,213 +10,173 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from dotenv import load_dotenv
-import pandas as pd
-import requests
-import json
-from datetime import datetime
+import uuid
 
-# Load environment variables
+# Load environment variables from .env if available
 load_dotenv()
 
-# Initialize session states
+# Initialize session state for authentication and certificate tracking
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
-if 'certificate_count' not in st.session_state:
-    st.session_state.certificate_count = 0
-if 'certificates_data' not in st.session_state:
-    st.session_state.certificates_data = []
+if 'sent_certificates' not in st.session_state:
+    st.session_state.sent_certificates = []
+
+# File path for saving certificate details
+CERTIFICATE_LOG = "certificate_log.csv"
+
+# Check if CSV exists, if not create headers
+def initialize_csv():
+    if not os.path.exists(CERTIFICATE_LOG):
+        with open(CERTIFICATE_LOG, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['Number', 'Name', 'Email', 'Serial Number'])
+
+def check_password():
+    """Returns `True` if the user had the correct password."""
+    def password_entered():
+        if st.session_state["password"] == st.secrets.get("password", "default_password"):
+            st.session_state.authenticated = True
+            del st.session_state["password"]
+        else:
+            st.session_state.authenticated = False
+
+    if not st.session_state.authenticated:
+        st.text_input("Please enter the password", type="password", on_change=password_entered, key="password")
+        return False
+    return True
+
+def get_email_config():
+    if hasattr(st, 'secrets') and 'smtp' in st.secrets:
+        return {
+            'server': st.secrets.smtp.server,
+            'port': st.secrets.smtp.port,
+            'email': st.secrets.smtp.email,
+            'password': st.secrets.smtp.password
+        }
+    else:
+        return {
+            'server': os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
+            'port': int(os.getenv('SMTP_PORT', '587')),
+            'email': os.getenv('SENDER_EMAIL'),
+            'password': os.getenv('SENDER_PASSWORD')
+        }
 
 def generate_serial_number():
-    """Generate a unique serial number"""
-    current_year = datetime.now().year
-    count = st.session_state.certificate_count + 1
-    serial_number = f"PY{current_year}-{count:04d}"
-    st.session_state.certificate_count = count
-    return serial_number
-
-def save_to_gist(data):
-    """Save data to GitHub Gist"""
-    gist_token = st.secrets["gist_token"]
-    gist_id = st.secrets["gist_id"]
-    
-    headers = {
-        'Authorization': f'token {gist_token}',
-        'Accept': 'application/vnd.github.v3+json'
-    }
-    
-    # Convert data to CSV string
-    df = pd.DataFrame(data)
-    csv_content = df.to_csv(index=False)
-    
-    # Prepare the payload
-    payload = {
-        "files": {
-            "certificates.csv": {
-                "content": csv_content
-            }
-        }
-    }
-    
-    # Update the gist
-    response = requests.patch(
-        f'https://api.github.com/gists/{gist_id}',
-        headers=headers,
-        data=json.dumps(payload)
-    )
-    
-    return response.status_code == 200
-
-def load_from_gist():
-    """Load data from GitHub Gist"""
-    gist_token = st.secrets["gist_token"]
-    gist_id = st.secrets["gist_id"]
-    
-    headers = {
-        'Authorization': f'token {gist_token}',
-        'Accept': 'application/vnd.github.v3+json'
-    }
-    
-    response = requests.get(
-        f'https://api.github.com/gists/{gist_id}',
-        headers=headers
-    )
-    
-    if response.status_code == 200:
-        gist_data = response.json()
-        csv_content = gist_data['files']['certificates.csv']['content']
-        df = pd.read_csv(pd.StringIO(csv_content))
-        return df.to_dict('records')
-    return []
+    return str(uuid.uuid4())[:8]  # Short unique serial number
 
 def modify_psd(template_path, name, date, serial_number):
-    # Open the PSD file
     psd = PSDImage.open(template_path)
-    
-    # Convert to PIL Image
-    image = psd.compose()
-    image = image.resize((1714, 1205), Image.Resampling.LANCZOS)
-    
-    # Create drawing object
+    image = psd.compose().resize((1714, 1205), Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(image)
-    
     try:
         name_font = ImageFont.truetype("fonts/Pristina Regular.ttf", size=75)
         date_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=18)
-        serial_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=14)
+        serial_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=15)
     except OSError:
-        st.error("Font files not found!")
+        st.error("Font files not found. Ensure required fonts exist in the 'fonts' folder.")
         raise
-    
+
     # Add name
     name_color = (190, 140, 45)
     name_bbox = draw.textbbox((0, 0), name, font=name_font)
-    name_width = name_bbox[2] - name_bbox[0]
-    name_x = 959 - (name_width / 2)
+    name_x = 959 - ((name_bbox[2] - name_bbox[0]) / 2)
     draw.text((name_x, 618), name, font=name_font, fill=name_color)
-    
+
     # Add date
     date_color = (79, 79, 76)
     draw.text((660, 1038), date, font=date_font, fill=date_color)
-    
-    # Add serial number at bottom right
-    serial_color = (79, 79, 76)
-    serial_bbox = draw.textbbox((0, 0), serial_number, font=serial_font)
-    serial_width = serial_bbox[2] - serial_bbox[0]
-    draw.text((1614 - serial_width - 20, 1165), serial_number, font=serial_font, fill=serial_color)
-    
-    # Save image
+
+    # Add serial number (bottom right)
+    draw.text((1500, 1150), f"Serial: {serial_number}", font=serial_font, fill=(0, 0, 0))
+
     temp_path = tempfile.mktemp(suffix='.png')
     image.save(temp_path, quality=100, dpi=(300, 300))
-    
     return temp_path
 
-[Previous functions remain the same: check_password, get_email_config, convert_to_pdf, send_certificate]
+def convert_to_pdf(image_path):
+    image = Image.open(image_path).convert('RGB')
+    pdf_path = tempfile.mktemp(suffix='.pdf')
+    image.save(pdf_path, 'PDF', resolution=300.0, quality=100, optimize=False)
+    return pdf_path
+
+def save_to_csv(number, name, email, serial_number):
+    with open(CERTIFICATE_LOG, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([number, name, email, serial_number])
+
+def send_certificate(recipient_email, subject, body, pdf_path):
+    config = get_email_config()
+    if not all(config.values()):
+        raise ValueError("Missing email configuration.")
+    message = MIMEMultipart()
+    message['From'] = config['email']
+    message['To'] = recipient_email
+    message['Subject'] = subject
+    message.attach(MIMEText(body, 'plain'))
+    with open(pdf_path, 'rb') as f:
+        attachment = MIMEApplication(f.read(), _subtype='pdf')
+        attachment.add_header('Content-Disposition', 'attachment', filename='certificate.pdf')
+        message.attach(attachment)
+    try:
+        with smtplib.SMTP(config['server'], config['port']) as server:
+            server.starttls()
+            server.login(config['email'], config['password'])
+            server.send_message(message)
+            st.success("Email sent successfully!")
+    except Exception as e:
+        raise Exception(f"Email error: {str(e)}")
 
 def main():
+    initialize_csv()
     if not check_password():
         st.stop()
-    
-    # Load existing data
-    if not st.session_state.certificates_data:
-        st.session_state.certificates_data = load_from_gist()
-        st.session_state.certificate_count = len(st.session_state.certificates_data)
-    
     st.title("Certificate Generator & Sender")
-    
-    # Sidebar
-    st.sidebar.title("Configuration Status")
-    st.sidebar.write("Email Configuration:")
+
     config = get_email_config()
+    st.sidebar.title("Configuration Status")
     st.sidebar.text(f"SMTP Server: {config['server']}")
-    st.sidebar.text(f"SMTP Port: {config['port']}")
     st.sidebar.text(f"Sender Email: {config['email']}")
-    st.sidebar.text(f"Password Set: {'✓' if config['password'] else '✗'}")
-    
-    # Display certificates data in sidebar
-    st.sidebar.title("Certificates Issued")
-    st.sidebar.text(f"Total Certificates: {st.session_state.certificate_count}")
-    if st.session_state.certificates_data:
-        st.sidebar.write("Recent Certificates:")
-        for cert in st.session_state.certificates_data[-5:]:  # Show last 5 certificates
-            st.sidebar.text(f"Serial: {cert['serial']}")
-            st.sidebar.text(f"Name: {cert['name']}")
-            st.sidebar.text("---")
-    
-    # Logout button
+
+    # Display sent certificates
+    st.sidebar.title("Sent Certificates")
+    for cert in st.session_state.sent_certificates:
+        st.sidebar.text(f"{cert['number']}. {cert['name']} ({cert['serial']})")
+
     if st.sidebar.button("Logout"):
         st.session_state.authenticated = False
         st.experimental_rerun()
-    
-    # Main form
+
+    # Input form
     with st.form("certificate_form"):
         full_name = st.text_input("Full Name")
         email = st.text_input("Email Address")
         date = st.date_input("Date")
-        
         submit_button = st.form_submit_button("Generate & Send Certificate")
-        
+
         if submit_button and full_name and email and date:
             try:
-                # Generate serial number
                 serial_number = generate_serial_number()
-                
-                # Format date
                 formatted_date = date.strftime("%B %d, %Y")
-                
-                # Generate certificate
-                modified_psd = modify_psd("templates/certificate.psd", full_name, formatted_date, serial_number)
+                psd_path = "templates/certificate.psd"
+                modified_psd = modify_psd(psd_path, full_name, formatted_date, serial_number)
                 pdf_path = convert_to_pdf(modified_psd)
-                
-                # Preview
-                st.image(modified_psd, caption=f"Certificate Preview - Serial: {serial_number}", use_column_width=True)
-                
-                # Send email
+                first_name = full_name.split()[0]
                 email_subject = "Your Course Certificate"
-                email_body = f"""Dear {full_name.split()[0]},
-
-Please accept our sincere congratulations on successfully completing the Comprehensive Python Training course. 
-Your dedication and hard work have been commendable. We are delighted to present you with your certificate, attached herewith.
-Certificate Serial Number: {serial_number}
-
-We wish you all the best in your future endeavors."""
-                
+                email_body = f"Dear {first_name},\n\nYour certificate is attached. Congratulations!"
                 send_certificate(email, email_subject, email_body, pdf_path)
-                
-                # Save record
-                new_record = {
-                    'serial': serial_number,
+
+                # Save to CSV and session state
+                certificate_number = len(st.session_state.sent_certificates) + 1
+                save_to_csv(certificate_number, full_name, email, serial_number)
+                st.session_state.sent_certificates.append({
+                    'number': certificate_number,
                     'name': full_name,
-                    'email': email,
-                    'date': formatted_date,
-                    'issued_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                st.session_state.certificates_data.append(new_record)
-                save_to_gist(st.session_state.certificates_data)
-                
-                # Cleanup
+                    'serial': serial_number
+                })
+
+                # Clean up
                 os.remove(modified_psd)
                 os.remove(pdf_path)
-                
             except Exception as e:
                 st.error(str(e))
         elif submit_button:
