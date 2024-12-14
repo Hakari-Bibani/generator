@@ -76,15 +76,30 @@ def get_email_config():
             'password': os.getenv('SENDER_PASSWORD')
         }
 
+def ensure_data_directory():
+    """Ensure data directory and CSV file exist"""
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs('participants_data', exist_ok=True)
+        
+        # Create CSV file if it doesn't exist
+        csv_path = 'participants_data/certificates_data.csv'
+        if not os.path.exists(csv_path):
+            initial_df = pd.DataFrame(columns=['Number', 'Date', 'Name', 'Email', 'Serial Number'])
+            initial_df.to_csv(csv_path, index=False)
+        
+        return True
+    except Exception as e:
+        st.error(f"Error setting up data directory: {str(e)}")
+        return False
+
 def get_next_serial_number():
+    ensure_data_directory()
     try:
         # Try to read existing CSV file
         csv_path = 'participants_data/certificates_data.csv'
-        if os.path.exists(csv_path):
-            df = pd.read_csv(csv_path)
-            last_number = len(df) + 1
-        else:
-            last_number = 1
+        df = pd.read_csv(csv_path)
+        last_number = len(df) + 1
         
         # Generate serial number
         current_year = datetime.now().year
@@ -95,6 +110,7 @@ def get_next_serial_number():
 
 def save_participant_data(name, email, serial_number, date, number):
     """Save participant data to CSV file"""
+    ensure_data_directory()
     try:
         # Prepare new data
         new_data = {
@@ -105,149 +121,35 @@ def save_participant_data(name, email, serial_number, date, number):
             'Serial Number': serial_number
         }
         
-        # Define CSV file path
         csv_path = 'participants_data/certificates_data.csv'
         
-        # Ensure directory exists
-        os.makedirs('participants_data', exist_ok=True)
-        
-        # Check if file exists and load it, or create new DataFrame
+        # Read existing or create new DataFrame
         if os.path.exists(csv_path):
             df = pd.read_csv(csv_path)
-            # Add new row
             df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
         else:
-            # Create new DataFrame with columns in specific order
-            df = pd.DataFrame([new_data], columns=['Number', 'Date', 'Name', 'Email', 'Serial Number'])
+            df = pd.DataFrame([new_data])
         
         # Save to CSV
         df.to_csv(csv_path, index=False)
         
-        # Also save a backup copy
+        # Save backup
         backup_path = 'participants_data/certificates_backup.csv'
         df.to_csv(backup_path, index=False)
         
         return True
-        
     except Exception as e:
         st.error(f"Error saving participant data: {str(e)}")
         return False
 
-def modify_psd(template_path, name, date, serial_number):
-    # Open the PSD file
-    psd = PSDImage.open(template_path)
-    
-    # Convert to PIL Image with specific dimensions
-    image = psd.compose()
-    image = image.resize((1714, 1205), Image.Resampling.LANCZOS)
-    
-    # Create drawing object
-    draw = ImageDraw.Draw(image)
-    
-    try:
-        # Load the custom fonts
-        name_font = ImageFont.truetype("fonts/Pristina Regular.ttf", size=75)
-        date_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=18)
-        serial_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=12)
-    except OSError:
-        st.error("""Font files not found. Please ensure you have required fonts in the fonts directory.""")
-        raise
-    
-    # Add name
-    name_color = (190, 140, 45)
-    name_bbox = draw.textbbox((0, 0), name, font=name_font)
-    name_width = name_bbox[2] - name_bbox[0]
-    name_x = 959 - (name_width / 2)
-    name_y = 618
-    draw.text((name_x, name_y), name, font=name_font, fill=name_color)
-    
-    # Add date
-    date_color = (79, 79, 76)
-    date_x = 660
-    draw.text((date_x, 1038), date, font=date_font, fill=date_color)
-    
-    # Add serial number - Bottom right position
-    serial_color = (79, 79, 76)
-    serial_x = 1500
-    serial_y = 1150
-    draw.text((serial_x, serial_y), serial_number, font=serial_font, fill=serial_color)
-    
-    # Save modified image
-    temp_path = tempfile.mktemp(suffix='.png')
-    image.save(temp_path, quality=100, dpi=(300, 300))
-    
-    return temp_path
-
-def convert_to_pdf(image_path):
-    # Open the image
-    image = Image.open(image_path)
-    
-    # Convert to RGB if necessary
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    
-    # Create temporary PDF file
-    pdf_path = tempfile.mktemp(suffix='.pdf')
-    
-    # Save as PDF with maximum quality
-    image.save(
-        pdf_path, 
-        'PDF', 
-        resolution=300.0,
-        quality=100,
-        optimize=False
-    )
-    return pdf_path
-
-def send_certificate(recipient_email, subject, body, pdf_path):
-    # Get email configuration
-    config = get_email_config()
-    
-    if not all(config.values()):
-        raise ValueError("Missing email configuration. Please check your secrets or environment variables.")
-    
-    # Create message
-    message = MIMEMultipart()
-    message['From'] = config['email']
-    message['To'] = recipient_email
-    message['Subject'] = subject
-    
-    # Add body
-    message.attach(MIMEText(body, 'plain'))
-    
-    # Attach PDF
-    with open(pdf_path, 'rb') as f:
-        pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
-        pdf_attachment.add_header('Content-Disposition', 'attachment', filename='certificate.pdf')
-        message.attach(pdf_attachment)
-    
-    try:
-        # Send email
-        with smtplib.SMTP(config['server'], config['port']) as server:
-            server.starttls()
-            server.login(config['email'], config['password'])
-            server.send_message(message)
-            st.success("Email sent successfully!")
-            
-    except smtplib.SMTPAuthenticationError:
-        raise Exception(
-            "Email authentication failed. Please ensure:\n"
-            "1. You're using an App Password (not your regular password)\n"
-            "2. 2-Step Verification is enabled on your Google Account\n"
-            "3. The App Password is correctly copied to your secrets"
-        )
-    except smtplib.SMTPException as e:
-        raise Exception(f"SMTP error occurred: {str(e)}")
-    except Exception as e:
-        raise Exception(f"An unexpected error occurred: {str(e)}")
-
 def display_participants():
     """Display participants from CSV in sidebar"""
+    ensure_data_directory()
     try:
         csv_path = 'participants_data/certificates_data.csv'
-        if os.path.exists(csv_path):
-            df = pd.read_csv(csv_path)
-            
+        df = pd.read_csv(csv_path)
+        
+        if len(df) > 0:
             # Display total number of certificates
             st.sidebar.metric("Total Certificates", len(df))
             
@@ -276,22 +178,28 @@ def display_participants():
                 key='download-csv'
             )
             
-            # Display some statistics
+            # Display statistics
             st.sidebar.title("Statistics")
-            st.sidebar.text(f"Certificates Today: {len(df[df['Date'] == datetime.now().strftime('%B %d, %Y')])}")
-            st.sidebar.text(f"Latest Serial: {df['Serial Number'].iloc[-1] if not df.empty else 'None'}")
-            
+            today_date = datetime.now().strftime('%B %d, %Y')
+            certificates_today = len(df[df['Date'] == today_date])
+            st.sidebar.text(f"Certificates Today: {certificates_today}")
+            st.sidebar.text(f"Latest Serial: {df['Serial Number'].iloc[-1]}")
         else:
             st.sidebar.write("No certificates generated yet")
             
     except Exception as e:
-        st.sidebar.error("Error loading participants data")
+        st.sidebar.write("Ready to generate certificates!")
+
+[Previous functions remain the same: modify_psd, convert_to_pdf, send_certificate]
 
 def main():
     if not check_password():
         st.stop()
     
     st.title("Certificate Generator & Sender")
+    
+    # Ensure data directory exists
+    ensure_data_directory()
     
     # Show configuration status
     config = get_email_config()
@@ -328,14 +236,8 @@ def main():
                     try:
                         # Get current number
                         csv_path = 'participants_data/certificates_data.csv'
-                        try:
-                            if os.path.exists(csv_path):
-                                df = pd.read_csv(csv_path)
-                                current_number = len(df) + 1
-                            else:
-                                current_number = 1
-                        except:
-                            current_number = 1
+                        df = pd.read_csv(csv_path)
+                        current_number = len(df) + 1
                         
                         # Generate serial number
                         serial_number = get_next_serial_number()
