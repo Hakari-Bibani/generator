@@ -142,6 +142,114 @@ def save_participant_data(name, email, serial_number, date, number):
         st.error(f"Error saving participant data: {str(e)}")
         return False
 
+def modify_psd(template_path, name, date, serial_number):
+    # Open the PSD file
+    psd = PSDImage.open(template_path)
+    
+    # Convert to PIL Image with specific dimensions
+    image = psd.compose()
+    image = image.resize((1714, 1205), Image.Resampling.LANCZOS)
+    
+    # Create drawing object
+    draw = ImageDraw.Draw(image)
+    
+    try:
+        # Load the custom fonts
+        name_font = ImageFont.truetype("fonts/Pristina Regular.ttf", size=75)
+        date_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=18)
+        serial_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=12)
+    except OSError:
+        st.error("""Font files not found. Please ensure you have required fonts in the fonts directory.""")
+        raise
+    
+    # Add name
+    name_color = (190, 140, 45)
+    name_bbox = draw.textbbox((0, 0), name, font=name_font)
+    name_width = name_bbox[2] - name_bbox[0]
+    name_x = 959 - (name_width / 2)
+    name_y = 618
+    draw.text((name_x, name_y), name, font=name_font, fill=name_color)
+    
+    # Add date
+    date_color = (79, 79, 76)
+    date_x = 660
+    draw.text((date_x, 1038), date, font=date_font, fill=date_color)
+    
+    # Add serial number - Bottom right position
+    serial_color = (79, 79, 76)
+    serial_x = 1500
+    serial_y = 1150
+    draw.text((serial_x, serial_y), serial_number, font=serial_font, fill=serial_color)
+    
+    # Save modified image
+    temp_path = tempfile.mktemp(suffix='.png')
+    image.save(temp_path, quality=100, dpi=(300, 300))
+    
+    return temp_path
+
+def convert_to_pdf(image_path):
+    # Open the image
+    image = Image.open(image_path)
+    
+    # Convert to RGB if necessary
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Create temporary PDF file
+    pdf_path = tempfile.mktemp(suffix='.pdf')
+    
+    # Save as PDF with maximum quality
+    image.save(
+        pdf_path, 
+        'PDF', 
+        resolution=300.0,
+        quality=100,
+        optimize=False
+    )
+    return pdf_path
+
+def send_certificate(recipient_email, subject, body, pdf_path):
+    # Get email configuration
+    config = get_email_config()
+    
+    if not all(config.values()):
+        raise ValueError("Missing email configuration. Please check your secrets or environment variables.")
+    
+    # Create message
+    message = MIMEMultipart()
+    message['From'] = config['email']
+    message['To'] = recipient_email
+    message['Subject'] = subject
+    
+    # Add body
+    message.attach(MIMEText(body, 'plain'))
+    
+    # Attach PDF
+    with open(pdf_path, 'rb') as f:
+        pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
+        pdf_attachment.add_header('Content-Disposition', 'attachment', filename='certificate.pdf')
+        message.attach(pdf_attachment)
+    
+    try:
+        # Send email
+        with smtplib.SMTP(config['server'], config['port']) as server:
+            server.starttls()
+            server.login(config['email'], config['password'])
+            server.send_message(message)
+            st.success("Email sent successfully!")
+            
+    except smtplib.SMTPAuthenticationError:
+        raise Exception(
+            "Email authentication failed. Please ensure:\n"
+            "1. You're using an App Password (not your regular password)\n"
+            "2. 2-Step Verification is enabled on your Google Account\n"
+            "3. The App Password is correctly copied to your secrets"
+        )
+    except smtplib.SMTPException as e:
+        raise Exception(f"SMTP error occurred: {str(e)}")
+    except Exception as e:
+        raise Exception(f"An unexpected error occurred: {str(e)}")
+
 def display_participants():
     """Display participants from CSV in sidebar"""
     ensure_data_directory()
@@ -189,8 +297,6 @@ def display_participants():
             
     except Exception as e:
         st.sidebar.write("Ready to generate certificates!")
-
-[Previous functions remain the same: modify_psd, convert_to_pdf, send_certificate]
 
 def main():
     if not check_password():
