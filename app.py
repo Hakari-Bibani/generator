@@ -9,35 +9,14 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from dotenv import load_dotenv
+import pandas as pd
 
 # Load environment variables from .env if available
 load_dotenv()
 
-# Initialize session state for authentication
+# Initialize session state for authentication and participants data
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
-
-def check_password():
-    """Returns `True` if the user had the correct password."""
-
-    def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        if st.session_state["password"] == st.secrets.get("password", "default_password"):
-            st.session_state.authenticated = True
-            del st.session_state["password"]  # Don't store password
-        else:
-            st.session_state.authenticated = False
-
-    if not st.session_state.authenticated:
-        # First run, show input for password.
-        st.text_input(
-            "Please enter the password", 
-            type="password", 
-            on_change=password_entered, 
-            key="password"
-        )
-        return False
-    return True
 
 def get_email_config():
     # Try to get from Streamlit secrets first (TOML format)
@@ -57,13 +36,72 @@ def get_email_config():
             'password': os.getenv('SENDER_PASSWORD')
         }
 
-def modify_psd(template_path, name, date):
+def check_password():
+    """Returns `True` if the user had the correct password."""
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["password"] == st.secrets.get("password", "default_password"):
+            st.session_state.authenticated = True
+            del st.session_state["password"]
+        else:
+            st.session_state.authenticated = False
+
+    if not st.session_state.authenticated:
+        st.text_input(
+            "Please enter the password", 
+            type="password", 
+            on_change=password_entered, 
+            key="password"
+        )
+        return False
+    return True
+
+def get_next_serial_number():
+    try:
+        # Try to read existing CSV file
+        if os.path.exists('participants.csv'):
+            df = pd.read_csv('participants.csv')
+            last_number = len(df) + 1
+        else:
+            last_number = 1
+        
+        # Generate serial number
+        current_year = datetime.now().year
+        return f"PY{current_year}-{last_number:04d}"
+    except Exception as e:
+        st.error(f"Error generating serial number: {str(e)}")
+        return f"PY{datetime.now().year}-{datetime.now().timestamp():.0f}"
+
+def save_participant_data(name, email, serial_number, date):
+    try:
+        new_data = {
+            'Date': date,
+            'Name': name,
+            'Email': email,
+            'Serial Number': serial_number
+        }
+        
+        # Read existing CSV or create new DataFrame
+        if os.path.exists('participants.csv'):
+            df = pd.read_csv('participants.csv')
+            df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+        else:
+            df = pd.DataFrame([new_data])
+        
+        # Save to CSV
+        df.to_csv('participants.csv', index=False)
+        return True
+    except Exception as e:
+        st.error(f"Error saving participant data: {str(e)}")
+        return False
+
+def modify_psd(template_path, name, date, serial_number):
     # Open the PSD file
     psd = PSDImage.open(template_path)
     
     # Convert to PIL Image with specific dimensions
     image = psd.compose()
-    image = image.resize((1714, 1205), Image.Resampling.LANCZOS)  # Using LANCZOS for better quality resize
+    image = image.resize((1714, 1205), Image.Resampling.LANCZOS)
     
     # Create drawing object
     draw = ImageDraw.Draw(image)
@@ -72,31 +110,34 @@ def modify_psd(template_path, name, date):
         # Load the custom fonts
         name_font = ImageFont.truetype("fonts/Pristina Regular.ttf", size=75)
         date_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=18)
+        serial_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=12)
     except OSError:
-        st.error("""Font files not found. Please ensure you have:
-        1. fonts/Pristina Regular.ttf
-        2. fonts/Arial-Bold.ttf
-        in your fonts directory.""")
+        st.error("""Font files not found. Please ensure you have required fonts in the fonts directory.""")
         raise
     
-    # Add name with Pristina Regular font - Moved higher
-    name_color = (190, 140, 45)  # RGB for #be8c4d
-    # Calculate text size for centering
+    # Add name
+    name_color = (190, 140, 45)
     name_bbox = draw.textbbox((0, 0), name, font=name_font)
     name_width = name_bbox[2] - name_bbox[0]
-    name_x = 959 - (name_width / 2)  # Center horizontally around x: 958.79
+    name_x = 959 - (name_width / 2)
     name_y = 618
     draw.text((name_x, name_y), name, font=name_font, fill=name_color)
     
-    # Add date with Arial Bold font - Moved left
-    date_color = (79, 79, 76)  # RGB for #4f4f4c
+    # Add date
+    date_color = (79, 79, 76)
     date_x = 660
-    date_y = 1038 
     draw.text((date_x, 1038), date, font=date_font, fill=date_color)
     
-    # Save modified image in high quality
+    # Add serial number
+    serial_color = (79, 79, 76)
+    serial_bbox = draw.textbbox((0, 0), serial_number, font=serial_font)
+    serial_width = serial_bbox[2] - serial_bbox[0]
+    serial_x = 857 - (serial_width / 2)
+    draw.text((serial_x, 1150), serial_number, font=serial_font, fill=serial_color)
+    
+    # Save modified image
     temp_path = tempfile.mktemp(suffix='.png')
-    image.save(temp_path, quality=100, dpi=(300, 300))  # Maximum quality PNG
+    image.save(temp_path, quality=100, dpi=(300, 300))
     
     return temp_path
 
@@ -117,7 +158,7 @@ def convert_to_pdf(image_path):
         'PDF', 
         resolution=300.0,
         quality=100,
-        optimize=False  # Disable optimization to maintain quality
+        optimize=False
     )
     return pdf_path
 
@@ -163,11 +204,33 @@ def send_certificate(recipient_email, subject, body, pdf_path):
     except Exception as e:
         raise Exception(f"An unexpected error occurred: {str(e)}")
 
+def display_participants():
+    try:
+        if os.path.exists('participants.csv'):
+            df = pd.read_csv('participants.csv')
+            st.sidebar.title("Recent Certificates")
+            st.sidebar.dataframe(
+                df[['Name', 'Serial Number']].tail(10),
+                hide_index=True
+            )
+            
+            # Add download button
+            csv = df.to_csv(index=False)
+            st.sidebar.download_button(
+                "Download Complete List",
+                csv,
+                "participants.csv",
+                "text/csv"
+            )
+        else:
+            st.sidebar.write("No certificates generated yet")
+    except Exception as e:
+        st.sidebar.error("Error loading participants data")
+
 def main():
     if not check_password():
-        st.stop()  # Do not continue if not authenticated
+        st.stop()
     
-    # Your existing main application code starts here
     st.title("Certificate Generator & Sender")
     
     # Show configuration status
@@ -179,7 +242,10 @@ def main():
     st.sidebar.text(f"Sender Email: {config['email']}")
     st.sidebar.text(f"Password Set: {'✓' if config['password'] else '✗'}")
     
-    # Add logout button in sidebar
+    # Display participants
+    display_participants()
+    
+    # Add logout button
     if st.sidebar.button("Logout"):
         st.session_state.authenticated = False
         st.experimental_rerun()
@@ -195,18 +261,21 @@ def main():
         if submit_button:
             if full_name and email and date:
                 try:
-                    # Convert date to required format
+                    # Generate serial number
+                    serial_number = get_next_serial_number()
+                    
+                    # Format date
                     formatted_date = date.strftime("%B %d, %Y")
                     
                     # Generate certificate
                     psd_path = "templates/certificate.psd"
-                    modified_psd = modify_psd(psd_path, full_name, formatted_date)
+                    modified_psd = modify_psd(psd_path, full_name, formatted_date, serial_number)
                     
                     # Convert to PDF
                     pdf_path = convert_to_pdf(modified_psd)
                     
-                    # Preview before sending
-                    st.image(modified_psd, caption="Certificate Preview", use_column_width=True)
+                    # Preview certificate
+                    st.image(modified_psd, caption=f"Certificate Preview - {serial_number}", use_column_width=True)
                     
                     # Send email
                     first_name = full_name.split()[0]
@@ -215,16 +284,23 @@ def main():
 
 Please accept our sincere congratulations on successfully completing the Comprehensive Python Training course. 
 Your dedication and hard work have been commendable. We are delighted to present you with your certificate, attached herewith.
+
+Certificate Serial Number: {serial_number}
+
 We wish you all the best in your future endeavors."""
                     
                     send_certificate(email, email_subject, email_body, pdf_path)
                     
-                    # Clean up temporary files
+                    # Save participant data
+                    if save_participant_data(full_name, email, serial_number, formatted_date):
+                        st.success(f"Certificate generated and sent successfully! Serial Number: {serial_number}")
+                    
+                    # Clean up
                     os.remove(modified_psd)
                     os.remove(pdf_path)
                     
                 except Exception as e:
-                    st.error(str(e))
+                    st.error(f"An error occurred: {str(e)}")
             else:
                 st.warning("Please fill in all fields.")
 
