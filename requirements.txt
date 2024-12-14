@@ -1,4 +1,6 @@
-streamlit==1.30.0
-Pillow==10.1.0
+streamlit==1.31.0
 psd-tools==1.9.24
+Pillow==10.1.0
 python-dotenv==1.0.0
+pandas==2.1.4
+python-dateutil==2.8.2
