@@ -18,24 +18,6 @@ load_dotenv()
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 
-def get_email_config():
-    # Try to get from Streamlit secrets first (TOML format)
-    if hasattr(st, 'secrets') and 'smtp' in st.secrets:
-        return {
-            'server': st.secrets.smtp.server,
-            'port': st.secrets.smtp.port,
-            'email': st.secrets.smtp.email,
-            'password': st.secrets.smtp.password
-        }
-    # Fall back to environment variables
-    else:
-        return {
-            'server': os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
-            'port': int(os.getenv('SMTP_PORT', '587')),
-            'email': os.getenv('SENDER_EMAIL'),
-            'password': os.getenv('SENDER_PASSWORD')
-        }
-
 def check_password():
     """Returns `True` if the user had the correct password."""
     def password_entered():
@@ -56,6 +38,24 @@ def check_password():
         return False
     return True
 
+def get_email_config():
+    # Try to get from Streamlit secrets first (TOML format)
+    if hasattr(st, 'secrets') and 'smtp' in st.secrets:
+        return {
+            'server': st.secrets.smtp.server,
+            'port': st.secrets.smtp.port,
+            'email': st.secrets.smtp.email,
+            'password': st.secrets.smtp.password
+        }
+    # Fall back to environment variables
+    else:
+        return {
+            'server': os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
+            'port': int(os.getenv('SMTP_PORT', '587')),
+            'email': os.getenv('SENDER_EMAIL'),
+            'password': os.getenv('SENDER_PASSWORD')
+        }
+
 def get_next_serial_number():
     try:
         # Try to read existing CSV file
@@ -72,9 +72,10 @@ def get_next_serial_number():
         st.error(f"Error generating serial number: {str(e)}")
         return f"PY{datetime.now().year}-{datetime.now().timestamp():.0f}"
 
-def save_participant_data(name, email, serial_number, date):
+def save_participant_data(name, email, serial_number, date, number):
     try:
         new_data = {
+            'Number': number,
             'Date': date,
             'Name': name,
             'Email': email,
@@ -128,14 +129,13 @@ def modify_psd(template_path, name, date, serial_number):
     date_x = 660
     draw.text((date_x, 1038), date, font=date_font, fill=date_color)
     
-    # Add serial number
+    # Add serial number - Bottom right position
     serial_color = (79, 79, 76)
-    serial_bbox = draw.textbbox((0, 0), serial_number, font=serial_font)
-    serial_width = serial_bbox[2] - serial_bbox[0]
-    serial_x = 857 - (serial_width / 2)
-    draw.text((serial_x, 1150), serial_number, font=serial_font, fill=serial_color)
+    serial_x = 1500
+    serial_y = 1150
+    draw.text((serial_x, serial_y), serial_number, font=serial_font, fill=serial_color)
     
-    # Save modified image
+    # Save modified image in high quality
     temp_path = tempfile.mktemp(suffix='.png')
     image.save(temp_path, quality=100, dpi=(300, 300))
     
@@ -209,9 +209,17 @@ def display_participants():
         if os.path.exists('participants.csv'):
             df = pd.read_csv('participants.csv')
             st.sidebar.title("Recent Certificates")
+            
+            # Display recent certificates with all information
             st.sidebar.dataframe(
-                df[['Name', 'Serial Number']].tail(10),
-                hide_index=True
+                df[['Number', 'Name', 'Serial Number', 'Date']].tail(10),
+                hide_index=True,
+                column_config={
+                    'Number': 'No.',
+                    'Name': 'Participant Name',
+                    'Serial Number': 'Serial No.',
+                    'Date': 'Issue Date'
+                }
             )
             
             # Add download button
@@ -261,6 +269,13 @@ def main():
         if submit_button:
             if full_name and email and date:
                 try:
+                    # Get current number
+                    try:
+                        df = pd.read_csv('participants.csv')
+                        current_number = len(df) + 1
+                    except:
+                        current_number = 1
+                    
                     # Generate serial number
                     serial_number = get_next_serial_number()
                     
@@ -291,11 +306,11 @@ We wish you all the best in your future endeavors."""
                     
                     send_certificate(email, email_subject, email_body, pdf_path)
                     
-                    # Save participant data
-                    if save_participant_data(full_name, email, serial_number, formatted_date):
+                    # Save participant data with number
+                    if save_participant_data(full_name, email, serial_number, formatted_date, current_number):
                         st.success(f"Certificate generated and sent successfully! Serial Number: {serial_number}")
                     
-                    # Clean up
+                    # Clean up temporary files
                     os.remove(modified_psd)
                     os.remove(pdf_path)
                     
