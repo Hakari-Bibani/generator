@@ -225,3 +225,115 @@ def send_certificate(recipient_email, subject, body, pdf_path):
         with smtplib.SMTP(config['server'], config['port']) as server:
             server.starttls()
             server.login(config['email'], config['password'])
+            server.send_message(message)
+            st.success("Email sent successfully!")
+            
+    except smtplib.SMTPAuthenticationError:
+        raise Exception(
+            "Email authentication failed. Please ensure:\n"
+            "1. You're using an App Password (not your regular password)\n"
+            "2. 2-Step Verification is enabled on your Google Account\n"
+            "3. The App Password is correctly copied to your secrets"
+        )
+    except smtplib.SMTPException as e:
+        raise Exception(f"SMTP error occurred: {str(e)}")
+    except Exception as e:
+        raise Exception(f"An unexpected error occurred: {str(e)}")
+
+def main():
+    if not check_password():
+        st.stop()
+    
+    st.title("Certificate Generator & Sender")
+    
+    # Sidebar with certificate history
+    st.sidebar.title("Configuration Status")
+    config = get_email_config()
+    st.sidebar.write("Email Configuration:")
+    st.sidebar.text(f"SMTP Server: {config['server']}")
+    st.sidebar.text(f"SMTP Port: {config['port']}")
+    st.sidebar.text(f"Sender Email: {config['email']}")
+    st.sidebar.text(f"Password Set: {'✓' if config['password'] else '✗'}")
+    
+    # Display certificate history in sidebar
+    st.sidebar.title("Certificate History")
+    st.sidebar.write(f"Total Certificates Generated: {len(st.session_state.certificates)}")
+    
+    if st.session_state.certificates:
+        for i, cert in enumerate(st.session_state.certificates, 1):
+            st.sidebar.write(f"""
+            **Certificate {i}:**
+            - **Serial:** {cert['serial']}  
+            - **Name:** {cert['name']}  
+            - **Email:** {cert['email']}  
+            - **Date:** {cert['date']}  
+            ---
+            """)
+    
+    # User input form
+    with st.form("certificate_form"):
+        full_name = st.text_input("Full Name")
+        email = st.text_input("Email Address")
+        date = st.date_input("Date")
+        
+        submit_button = st.form_submit_button("Generate & Send Certificate")
+        
+        if submit_button and full_name and email and date:
+            try:
+                # Generate serial number
+                serial_number = generate_serial_number()
+                
+                # Format date
+                formatted_date = date.strftime("%B %d, %Y")
+                
+                # Generate certificate
+                modified_psd = modify_psd("templates/certificate.psd", full_name, formatted_date, serial_number)
+                pdf_path = convert_to_pdf(modified_psd)
+                
+                # Preview
+                st.image(modified_psd, caption="Certificate Preview", use_column_width=True)
+                
+                # Send email
+                first_name = full_name.split()[0]
+                email_subject = "Your Course Certificate"
+                email_body = f"""Dear {first_name},
+
+Please accept our sincere congratulations on successfully completing the Comprehensive Python Training course. 
+Your dedication and hard work have been commendable. We are delighted to present you with your certificate (Serial: {serial_number}), attached herewith.
+
+We wish you all the best in your future endeavors."""
+                
+                send_certificate(email, email_subject, email_body, pdf_path)
+                
+                # Store certificate data
+                certificate_data = {
+                    'serial': serial_number,
+                    'name': full_name,
+                    'email': email,
+                    'date': formatted_date
+                }
+                st.session_state.certificates.append(certificate_data)
+                
+                # Save to GitHub
+                if save_to_github(st.session_state.certificates):
+                    st.success("Certificate data saved to GitHub successfully!")
+                
+                # Clean up
+                os.remove(modified_psd)
+                os.remove(pdf_path)
+                
+                # Refresh the page to update sidebar
+                st.experimental_rerun()
+                
+            except Exception as e:
+                st.error(str(e))
+        elif submit_button:
+            st.warning("Please fill in all fields.")
+    
+    # Add logout button
+    if st.sidebar.button("Logout"):
+        st.session_state.authenticated = False
+        st.experimental_rerun()
+
+if __name__ == "__main__":
+    main()
