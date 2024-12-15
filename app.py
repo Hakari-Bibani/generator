@@ -246,7 +246,7 @@ def main():
     
     st.title("Certificate Generator & Sender")
     
-    # Sidebar with certificate history
+    # Sidebar configuration status
     st.sidebar.title("Configuration Status")
     config = get_email_config()
     st.sidebar.write("Email Configuration:")
@@ -257,7 +257,42 @@ def main():
     
     # Display certificate history in sidebar
     st.sidebar.title("Certificate History")
+    
+    # Show total number of certificates and table
     if st.session_state.certificates:
+        st.sidebar.subheader(f"Total Certificates: {len(st.session_state.certificates)}")
+        
+        # Create a DataFrame for the table view
+        table_data = {
+            'No.': range(1, len(st.session_state.certificates) + 1),
+            'Name': [cert['name'] for cert in st.session_state.certificates],
+            'Serial': [cert['serial'] for cert in st.session_state.certificates]
+        }
+        df = pd.DataFrame(table_data)
+        
+        # Display table with custom styling
+        st.sidebar.dataframe(
+            df,
+            hide_index=True,
+            column_config={
+                'No.': st.column_config.NumberColumn(
+                    'No.',
+                    width='small'
+                ),
+                'Name': st.column_config.TextColumn(
+                    'Name',
+                    width='medium'
+                ),
+                'Serial': st.column_config.TextColumn(
+                    'Serial',
+                    width='medium'
+                )
+            },
+            use_container_width=True
+        )
+        
+        # Detailed view
+        st.sidebar.subheader("Detailed History")
         for cert in st.session_state.certificates:
             st.sidebar.write(f"""
             **Serial:** {cert['serial']}  
