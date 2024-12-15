@@ -177,17 +177,10 @@ def modify_psd(template_path, name, date, serial_number):
 
 def convert_to_pdf(image_path):
     """Convert image to PDF."""
-    # Open the image
     image = Image.open(image_path)
-    
-    # Convert to RGB if necessary
     if image.mode != 'RGB':
         image = image.convert('RGB')
-    
-    # Create temporary PDF file
     pdf_path = tempfile.mktemp(suffix='.pdf')
-    
-    # Save as PDF with maximum quality
     image.save(
         pdf_path, 
         'PDF', 
@@ -199,29 +192,24 @@ def convert_to_pdf(image_path):
 
 def send_certificate(recipient_email, subject, body, pdf_path):
     """Send certificate via email."""
-    # Get email configuration
     config = get_email_config()
     
     if not all(config.values()):
         raise ValueError("Missing email configuration. Please check your secrets or environment variables.")
     
-    # Create message
     message = MIMEMultipart()
     message['From'] = config['email']
     message['To'] = recipient_email
     message['Subject'] = subject
     
-    # Add body
     message.attach(MIMEText(body, 'plain'))
     
-    # Attach PDF
     with open(pdf_path, 'rb') as f:
         pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
         pdf_attachment.add_header('Content-Disposition', 'attachment', filename='certificate.pdf')
         message.attach(pdf_attachment)
     
     try:
-        # Send email
         with smtplib.SMTP(config['server'], config['port']) as server:
             server.starttls()
             server.login(config['email'], config['password'])
@@ -230,15 +218,13 @@ def send_certificate(recipient_email, subject, body, pdf_path):
             
     except smtplib.SMTPAuthenticationError:
         raise Exception(
-            "Email authentication failed. Please ensure:\n"
-            "1. You're using an App Password (not your regular password)\n"
-            "2. 2-Step Verification is enabled on your Google Account\n"
-            "3. The App Password is correctly copied to your secrets"
+            "Email authentication failed. Please check:\n"
+            "1. Using App Password (not regular password)\n"
+            "2. 2-Step Verification is enabled\n"
+            "3. App Password is correct"
         )
-    except smtplib.SMTPException as e:
-        raise Exception(f"SMTP error occurred: {str(e)}")
     except Exception as e:
-        raise Exception(f"An unexpected error occurred: {str(e)}")
+        raise Exception(f"Error sending email: {str(e)}")
 
 def main():
     if not check_password():
@@ -246,87 +232,104 @@ def main():
     
     st.title("Certificate Generator & Sender")
     
-    # Sidebar with certificate history
-    st.sidebar.title("Configuration Status")
-    config = get_email_config()
-    st.sidebar.write("Email Configuration:")
-    st.sidebar.text(f"SMTP Server: {config['server']}")
-    st.sidebar.text(f"SMTP Port: {config['port']}")
-    st.sidebar.text(f"Sender Email: {config['email']}")
-    st.sidebar.text(f"Password Set: {'✓' if config['password'] else '✗'}")
+    # Create columns for better layout
+    left_column, right_column = st.columns([2, 1])
     
-    # Display certificate history in sidebar
-    st.sidebar.title("Certificate History")
-    if st.session_state.certificates:
-        for cert in st.session_state.certificates:
-            st.sidebar.write(f"""
-            **Serial:** {cert['serial']}  
-            **Name:** {cert['name']}  
-            **Email:** {cert['email']}  
-            ---
-            """)
+    with right_column:
+        # Configuration Status
+        st.sidebar.title("Configuration Status")
+        config = get_email_config()
+        st.sidebar.write("Email Configuration:")
+        st.sidebar.text(f"SMTP Server: {config['server']}")
+        st.sidebar.text(f"SMTP Port: {config['port']}")
+        st.sidebar.text(f"Sender Email: {config['email']}")
+        st.sidebar.text(f"Password Set: {'✓' if config['password'] else '✗'}")
+        
+        # Certificates Summary with metrics
+        st.sidebar.title("Certificates Summary")
+        total_certificates = len(st.session_state.certificates)
+        st.sidebar.metric("Total Certificates Issued", total_certificates)
+        
+        if total_certificates > 0:
+            last_cert = st.session_state.certificates[-1]
+            st.sidebar.metric("Latest Serial Number", last_cert['serial'])
+        
+        # Certificate History with improved formatting
+        st.sidebar.title("Certificate History")
+        if st.session_state.certificates:
+            for i, cert in enumerate(reversed(st.session_state.certificates), 1):
+                with st.sidebar.expander(f"Certificate #{total_certificates - i + 1}"):
+                    st.markdown(f"""
+                    🔢 **Serial:** `{cert['serial']}`  
+                    👤 **Name:** {cert['name']}  
+                    📅 **Date:** {cert['date']}  
+                    ✉️ **Email:** {cert['email']}
+                    """)
+        else:
+            st.sidebar.info("No certificates issued yet")
+        
+        # Logout button at the bottom of sidebar
+        if st.sidebar.button("Logout"):
+            st.session_state.authenticated = False
+            st.experimental_rerun()
     
-    # User input form
-    with st.form("certificate_form"):
-        full_name = st.text_input("Full Name")
-        email = st.text_input("Email Address")
-        date = st.date_input("Date")
-        
-        submit_button = st.form_submit_button("Generate & Send Certificate")
-        
-        if submit_button and full_name and email and date:
-            try:
-                # Generate serial number
-                serial_number = generate_serial_number()
-                
-                # Format date
-                formatted_date = date.strftime("%B %d, %Y")
-                
-                # Generate certificate
-                modified_psd = modify_psd("templates/certificate.psd", full_name, formatted_date, serial_number)
-                pdf_path = convert_to_pdf(modified_psd)
-                
-                # Preview
-                st.image(modified_psd, caption="Certificate Preview", use_column_width=True)
-                
-                # Send email
-                first_name = full_name.split()[0]
-                email_subject = "Your Course Certificate"
-                email_body = f"""Dear {first_name},
+    with left_column:
+        # Main form
+        with st.form("certificate_form"):
+            full_name = st.text_input("Full Name")
+            email = st.text_input("Email Address")
+            date = st.date_input("Date")
+            
+            submit_button = st.form_submit_button("Generate & Send Certificate")
+            
+            if submit_button and full_name and email and date:
+                try:
+                    # Generate serial number
+                    serial_number = generate_serial_number()
+                    
+                    # Format date
+                    formatted_date = date.strftime("%B %d, %Y")
+                    
+                    # Generate certificate
+                    modified_psd = modify_psd("templates/certificate.psd", full_name, formatted_date, serial_number)
+                    pdf_path = convert_to_pdf(modified_psd)
+                    
+                    # Preview
+                    st.image(modified_psd, caption=f"Certificate Preview - Serial: {serial_number}", use_column_width=True)
+                    
+                    # Send email
+                    first_name = full_name.split()[0]
+                    email_subject = "Your Course Certificate"
+                    email_body = f"""Dear {first_name},
 
 Please accept our sincere congratulations on successfully completing the Comprehensive Python Training course. 
 Your dedication and hard work have been commendable. We are delighted to present you with your certificate (Serial: {serial_number}), attached herewith.
 
 We wish you all the best in your future endeavors."""
-                
-                send_certificate(email, email_subject, email_body, pdf_path)
-                
-                # Store certificate data
-                certificate_data = {
-                    'serial': serial_number,
-                    'name': full_name,
-                    'email': email,
-                    'date': formatted_date
-                }
-                st.session_state.certificates.append(certificate_data)
-                
-                # Save to GitHub
-                if save_to_github(st.session_state.certificates):
-                    st.success("Certificate data saved to GitHub successfully!")
-                
-                # Clean up
-                os.remove(modified_psd)
-                os.remove(pdf_path)
-                
-            except Exception as e:
-                st.error(str(e))
-        elif submit_button:
-            st.warning("Please fill in all fields.")
-    
-    # Add logout button
-    if st.sidebar.button("Logout"):
-        st.session_state.authenticated = False
-        st.experimental_rerun()
+                    
+                    send_certificate(email, email_subject, email_body, pdf_path)
+                    
+                    # Store certificate data
+                    certificate_data = {
+                        'serial': serial_number,
+                        'name': full_name,
+                        'email': email,
+                        'date': formatted_date
+                    }
+                    st.session_state.certificates.append(certificate_data)
+                    
+                    # Save to GitHub
+                    if save_to_github(st.session_state.certificates):
+                        st.success("Certificate data saved to GitHub successfully!")
+                    
+                    # Clean up
+                    os.remove(modified_psd)
+                    os.remove(pdf_path)
+                    
+                except Exception as e:
+                    st.error(str(e))
+            elif submit_button:
+                st.warning("Please fill in all fields.")
 
 if __name__ == "__main__":
     main()
