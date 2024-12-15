@@ -177,54 +177,51 @@ def modify_psd(template_path, name, date, serial_number):
 
 def convert_to_pdf(image_path):
     """Convert image to PDF."""
-    image = Image.open(image_path).convert('RGB')
+    # Open the image
+    image = Image.open(image_path)
+    
+    # Convert to RGB if necessary
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Create temporary PDF file
     pdf_path = tempfile.mktemp(suffix='.pdf')
-    image.save(pdf_path, 'PDF', resolution=300.0, quality=100, optimize=False)
+    
+    # Save as PDF with maximum quality
+    image.save(
+        pdf_path, 
+        'PDF', 
+        resolution=300.0,
+        quality=100,
+        optimize=False
+    )
     return pdf_path
 
 def send_certificate(recipient_email, subject, body, pdf_path):
     """Send certificate via email."""
+    # Get email configuration
     config = get_email_config()
+    
+    if not all(config.values()):
+        raise ValueError("Missing email configuration. Please check your secrets or environment variables.")
+    
+    # Create message
     message = MIMEMultipart()
     message['From'] = config['email']
     message['To'] = recipient_email
     message['Subject'] = subject
+    
+    # Add body
     message.attach(MIMEText(body, 'plain'))
+    
+    # Attach PDF
     with open(pdf_path, 'rb') as f:
         pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
         pdf_attachment.add_header('Content-Disposition', 'attachment', filename='certificate.pdf')
         message.attach(pdf_attachment)
-    with smtplib.SMTP(config['server'], config['port']) as server:
-        server.starttls()
-        server.login(config['email'], config['password'])
-        server.send_message(message)
-
-def main():
-    if not check_password():
-        st.stop()
-    st.title("Certificate Generator & Sender")
-    st.sidebar.title("Configuration Status")
-    config = get_email_config()
-    st.sidebar.write(f"SMTP Server: {config['server']}")
-    st.sidebar.write(f"Total Certificates: {len(st.session_state.certificates)}")
-    if st.session_state.certificates:
-        cert_df = pd.DataFrame(st.session_state.certificates, columns=['serial', 'name'])
-        st.sidebar.table(cert_df.rename(columns={"serial": "Serial Number", "name": "Recipient Name"}))
-    with st.form("certificate_form"):
-        full_name = st.text_input("Full Name")
-        email = st.text_input("Email Address")
-        date = st.date_input("Date")
-        submit_button = st.form_submit_button("Generate & Send Certificate")
-        if submit_button and full_name and email and date:
-            try:
-                serial_number = generate_serial_number()
-                pdf_path = convert_to_pdf(modify_psd("templates/certificate.psd", full_name, date.strftime("%B %d, %Y"), serial_number))
-                send_certificate(email, "Your Certificate", f"Dear {full_name.split()[0]},\nHere is your certificate.", pdf_path)
-                st.session_state.certificates.append({'serial': serial_number, 'name': full_name, 'email': email})
-                if save_to_github(st.session_state.certificates):
-                    st.success("Certificate data saved to GitHub!")
-            except Exception as e:
-                st.error(str(e))
-
-if __name__ == "__main__":
-    main()
+    
+    try:
+        # Send email
+        with smtplib.SMTP(config['server'], config['port']) as server:
+            server.starttls()
+            server.login(config['email'], config['password'])
