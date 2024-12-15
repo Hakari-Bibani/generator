@@ -257,30 +257,7 @@ def main():
     
     # Display certificate history in sidebar
     st.sidebar.title("Certificate History")
-    
-    # Show total number of certificates
-    total_certificates = len(st.session_state.certificates)
-    st.sidebar.metric("Total Certificates Issued", total_certificates)
-    
-    # Create a DataFrame for the table view
     if st.session_state.certificates:
-        df = pd.DataFrame(st.session_state.certificates)[['serial', 'name', 'email']]
-        
-        # Display table with custom formatting
-        st.sidebar.markdown("### Certificates Table")
-        st.sidebar.dataframe(
-            df,
-            column_config={
-                "serial": "Serial No.",
-                "name": "Name",
-                "email": "Email"
-            },
-            hide_index=True,
-            use_container_width=True
-        )
-        
-        # Display detailed list view
-        st.sidebar.markdown("### Detailed History")
         for cert in st.session_state.certificates:
             st.sidebar.write(f"""
             **Serial:** {cert['serial']}  
@@ -288,8 +265,6 @@ def main():
             **Email:** {cert['email']}  
             ---
             """)
-    else:
-        st.sidebar.info("No certificates issued yet.")
     
     # User input form
     with st.form("certificate_form"):
