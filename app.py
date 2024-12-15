@@ -12,15 +12,58 @@ from dotenv import load_dotenv
 import pandas as pd
 import github
 from github import Github
-import base64
 import io
 
 # Load environment variables from .env if available
 load_dotenv()
 
-# Initialize session state for certificate tracking
+# Initialize session states
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+
 if 'certificates' not in st.session_state:
     st.session_state.certificates = []
+
+def check_password():
+    """Returns `True` if the user had the correct password."""
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["password"] == st.secrets.get("password", "default_password"):
+            st.session_state.authenticated = True
+            del st.session_state["password"]  # Don't store password
+        else:
+            st.session_state.authenticated = False
+
+    if not st.session_state.authenticated:
+        # First run, show input for password.
+        st.text_input(
+            "Please enter the password", 
+            type="password", 
+            on_change=password_entered, 
+            key="password"
+        )
+        return False
+    return True
+
+def get_email_config():
+    """Get email configuration from secrets or environment variables."""
+    # Try to get from Streamlit secrets first
+    if hasattr(st, 'secrets') and 'smtp' in st.secrets:
+        return {
+            'server': st.secrets.smtp.server,
+            'port': st.secrets.smtp.port,
+            'email': st.secrets.smtp.email,
+            'password': st.secrets.smtp.password
+        }
+    # Fall back to environment variables
+    else:
+        return {
+            'server': os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
+            'port': int(os.getenv('SMTP_PORT', '587')),
+            'email': os.getenv('SENDER_EMAIL'),
+            'password': os.getenv('SENDER_PASSWORD')
+        }
 
 def generate_serial_number():
     """Generate a serial number in format PY-YYYY-XXXX"""
@@ -87,6 +130,7 @@ def save_to_github(data):
         return False
 
 def modify_psd(template_path, name, date, serial_number):
+    """Modify PSD template with name, date, and serial number."""
     # Open the PSD file
     psd = PSDImage.open(template_path)
     
@@ -100,7 +144,7 @@ def modify_psd(template_path, name, date, serial_number):
     try:
         name_font = ImageFont.truetype("fonts/Pristina Regular.ttf", size=75)
         date_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=18)
-        serial_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=16)  # Added for serial number
+        serial_font = ImageFont.truetype("fonts/Arial-Bold.ttf", size=16)
     except OSError:
         st.error("Font files not found. Please check your fonts directory.")
         raise
@@ -130,6 +174,71 @@ def modify_psd(template_path, name, date, serial_number):
     image.save(temp_path, quality=100, dpi=(300, 300))
     
     return temp_path
+
+def convert_to_pdf(image_path):
+    """Convert image to PDF."""
+    # Open the image
+    image = Image.open(image_path)
+    
+    # Convert to RGB if necessary
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Create temporary PDF file
+    pdf_path = tempfile.mktemp(suffix='.pdf')
+    
+    # Save as PDF with maximum quality
+    image.save(
+        pdf_path, 
+        'PDF', 
+        resolution=300.0,
+        quality=100,
+        optimize=False
+    )
+    return pdf_path
+
+def send_certificate(recipient_email, subject, body, pdf_path):
+    """Send certificate via email."""
+    # Get email configuration
+    config = get_email_config()
+    
+    if not all(config.values()):
+        raise ValueError("Missing email configuration. Please check your secrets or environment variables.")
+    
+    # Create message
+    message = MIMEMultipart()
+    message['From'] = config['email']
+    message['To'] = recipient_email
+    message['Subject'] = subject
+    
+    # Add body
+    message.attach(MIMEText(body, 'plain'))
+    
+    # Attach PDF
+    with open(pdf_path, 'rb') as f:
+        pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
+        pdf_attachment.add_header('Content-Disposition', 'attachment', filename='certificate.pdf')
+        message.attach(pdf_attachment)
+    
+    try:
+        # Send email
+        with smtplib.SMTP(config['server'], config['port']) as server:
+            server.starttls()
+            server.login(config['email'], config['password'])
+            server.send_message(message)
+            st.success("Email sent successfully!")
+            
+    except smtplib.SMTPAuthenticationError:
+        raise Exception(
+            "Email authentication failed. Please ensure:\n"
+            "1. You're using an App Password (not your regular password)\n"
+            "2. 2-Step Verification is enabled on your Google Account\n"
+            "3. The App Password is correctly copied to your secrets"
+        )
+    except smtplib.SMTPException as e:
+        raise Exception(f"SMTP error occurred: {str(e)}")
+    except Exception as e:
+        raise Exception(f"An unexpected error occurred: {str(e)}")
 
 def main():
     if not check_password():
